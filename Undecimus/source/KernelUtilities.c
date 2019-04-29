@@ -731,7 +731,7 @@ uint64_t OSDictionary_ItemBuffer(uint64_t OSDictionary) {
 uint64_t OSDictionary_ItemKey(uint64_t buffer, uint32_t idx) {
     uint64_t OSDictionary_ItemKey = 0;
     if (buffer != 0) {
-        OSDictionary_ItemKey = ReadKernel64(buffer + 16 + idx);
+        OSDictionary_ItemKey = ReadKernel64(buffer + 16 * idx);
     }
     return OSDictionary_ItemKey;
 }
@@ -1077,7 +1077,7 @@ bool unrestrictProcess(pid_t pid) {
                 }
                 LOG("%s(%d): Exceptionalizing process with: %s", __FUNCTION__, pid, "abs_path_exceptions");
                 if (!exceptionalizeProcess(sandbox, amfi_entitlements, abs_path_exceptions)) {
-                    LOG("%s(%d): Unable to exceptionalize process");
+                    LOG("%s(%d): Unable to exceptionalize process", __FUNCTION__, pid);
                     unrestrictProcess = false;
                 }
                 if (amfi_entitlements != 0) {
