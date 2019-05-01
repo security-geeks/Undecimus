@@ -629,18 +629,22 @@ pid_t pidOfProcess(const char *name) {
     pid_t pids[numberOfProcesses];
     bzero(pids, sizeof(pids));
     proc_listpids(PROC_ALL_PIDS, 0, pids, (int)sizeof(pids));
-    for (int i = 0; i < numberOfProcesses; ++i) {
+    bool foundProcess = false;
+    pid_t processPid = 0;
+    for (int i = 0; i < numberOfProcesses && !foundProcess; ++i) {
         if (pids[i] == 0) {
             continue;
         }
-        char pathBuffer[PROC_PIDPATHINFO_MAXSIZE];
-        bzero(pathBuffer, PROC_PIDPATHINFO_MAXSIZE);
-        proc_pidpath(pids[i], pathBuffer, sizeof(pathBuffer));
-        if (strlen(pathBuffer) > 0 && strcmp(pathBuffer, name) == 0) {
-            return pids[i];
+        char *path = get_path_for_pid(pids[i]);
+        if (path != NULL) {
+            if (strlen(path) > 0 && strcmp(path, name) == 0) {
+                processPid = pids[i];
+                foundProcess = true;
+            }
+            SafeFreeNULL(path);
         }
     }
-    return 0;
+    return processPid;
 }
 
 bool kernelVersionContains(const char *string) {
@@ -1413,6 +1417,19 @@ bool rebuildApplicationDatabases() {
         LOG("Failed to rebuild application databases");
         return false;
     }
+}
+
+char *get_path_for_pid(pid_t pid) {
+    char *ret = NULL;
+    uint32_t path_size = PROC_PIDPATHINFO_MAXSIZE;
+    char *path = malloc(path_size);
+    if (path != NULL) {
+        if (proc_pidpath(pid, path, path_size) >= 0) {
+            ret = strdup(path);
+        }
+        SafeFreeNULL(path);
+    }
+    return ret;
 }
 
 __attribute__((constructor))

@@ -68,6 +68,8 @@ const char *abs_path_exceptions[] = {
 int csops(pid_t pid, unsigned int  ops, void * useraddr, size_t usersize);
 int memorystatus_control(uint32_t command, int32_t pid, uint32_t flags, void *buffer, size_t buffersize);
 
+extern char *get_path_for_pid(pid_t pid);
+
 uint64_t the_realhost;
 uint64_t kernel_base = -1;
 uint64_t offset_options = 0;
@@ -1037,12 +1039,11 @@ bool unrestrictProcess(pid_t pid) {
         uint64_t proc_ucred = ReadKernel64(proc + koffset(KSTRUCT_OFFSET_PROC_UCRED));
         LOG("%s(%d): Found proc_ucred: 0x%llx", __FUNCTION__, pid, proc_ucred);
         if (proc_ucred != 0) {
-            char pathbuf[PROC_PIDPATHINFO_MAXSIZE];
-            bzero(pathbuf, sizeof(pathbuf));
-            if (proc_pidpath(pid, pathbuf, sizeof(pathbuf)) > 0) {
-                LOG("%s(%d): Found path: %s", __FUNCTION__, pid, pathbuf);
+            char *path = get_path_for_pid(pid);
+            if (path != NULL) {
+                LOG("%s(%d): Found path: %s", __FUNCTION__, pid, path);
                 struct stat statbuf;
-                if (lstat(pathbuf, &statbuf) == 0) {
+                if (lstat(path, &statbuf) == 0) {
                     LOG("%s(%d): Got stat for path", __FUNCTION__, pid);
                     if ((statbuf.st_mode & S_ISUID)) {
                         LOG("%s(%d): Enabling setuid", __FUNCTION__, pid);
@@ -1060,6 +1061,7 @@ bool unrestrictProcess(pid_t pid) {
                     LOG("%s(%d): Unable to get stat for path", __FUNCTION__, pid);
                     unrestrictProcess = false;
                 }
+                SafeFreeNULL(path);
             } else {
                 LOG("%s(%d): Unable to find path", __FUNCTION__, pid);
                 unrestrictProcess = false;
