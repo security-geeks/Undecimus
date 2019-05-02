@@ -261,7 +261,7 @@ bool extractDeb(NSString *debPath) {
         [deb extractFileNum:3 toFd:pipe.fileHandleForWriting.fileDescriptor];
     });
     bool result = [tar extractToPath:@"/"];
-    if ((kCFCoreFoundationVersionNumber >= 1535.12) && result) {
+    if ((kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_0) && result) {
         chdir("/");
         NSMutableArray *toInject = [NSMutableArray new];
         NSDictionary *files = tar.files;
@@ -1111,7 +1111,7 @@ bool supportsExploit(exploit_t exploit) {
                 return false;
             }
             if (machineNameContains("iPad5,") &&
-                kCFCoreFoundationVersionNumber >= 1535.12) {
+                kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_0) {
                 return false;
             }
             break;

@@ -858,7 +858,7 @@ void jailbreak()
         FINDOFFSET(vnode_put, NULL, true);
         FINDOFFSET(kernel_task, NULL, true);
         FINDOFFSET(shenanigans, NULL, true);
-        if (kCFCoreFoundationVersionNumber >= 1535.12) {
+        if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_0) {
             FINDOFFSET(vnode_get_snapshot, NULL, true);
             FINDOFFSET(fs_lookup_snapshot_metadata_by_name_and_return_name, NULL, true);
             FINDOFFSET(apfs_jhash_getvnode, NULL, true);
@@ -1189,7 +1189,7 @@ void jailbreak()
             uint64_t system_snapshot_vnode = 0;
             uint64_t system_snapshot_vnode_v_data = 0;
             uint32_t system_snapshot_vnode_v_data_flag = 0;
-            if (kCFCoreFoundationVersionNumber >= 1535.12) {
+            if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_0) {
                 system_snapshot_vnode = vnodeForSnapshot(rootfd, systemSnapshot);
                 LOG("system_snapshot_vnode = " ADDR, system_snapshot_vnode);
                 _assert(KERN_POINTER_VALID(system_snapshot_vnode), message, true);
@@ -1201,7 +1201,7 @@ void jailbreak()
                 WriteKernel32(system_snapshot_vnode_v_data + 49, system_snapshot_vnode_v_data_flag & ~0x40);
             }
             _assert(fs_snapshot_rename(rootfd, systemSnapshot, original_snapshot, 0) == ERR_SUCCESS, message, true);
-            if (kCFCoreFoundationVersionNumber >= 1535.12) {
+            if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_0) {
                 WriteKernel32(system_snapshot_vnode_v_data + 49, system_snapshot_vnode_v_data_flag);
                 _assert(vnode_put(system_snapshot_vnode) == ERR_SUCCESS, message, true);
             }
@@ -1286,7 +1286,7 @@ void jailbreak()
         NSArray <NSString *> *array = @[@"/var/Keychains/ocspcache.sqlite3",
                                         @"/var/Keychains/ocspcache.sqlite3-shm",
                                         @"/var/Keychains/ocspcache.sqlite3-wal"];
-        if (prefs.disable_app_revokes && kCFCoreFoundationVersionNumber < 1535.12) {
+        if (prefs.disable_app_revokes && kCFCoreFoundationVersionNumber < kCFCoreFoundationVersionNumber_iOS_12_0) {
             // Disable app revokes.
             LOG("Disabling app revokes...");
             SETMESSAGE(NSLocalizedString(@"Failed to disable app revokes.", nil));
@@ -1405,7 +1405,7 @@ void jailbreak()
             const char *snapshot = *snapshots;
             LOG("%s", snapshot);
             _assert(snapshot != NULL, message, true);
-            if (kCFCoreFoundationVersionNumber < 1452.23) {
+            if (kCFCoreFoundationVersionNumber < kCFCoreFoundationVersionNumber_iOS_11_3) {
                 const char *systemSnapshotMountPoint = "/private/var/tmp/jb/mnt2";
                 if (is_mountpoint(systemSnapshotMountPoint)) {
                     _assert(unmount(systemSnapshotMountPoint, MNT_FORCE) == ERR_SUCCESS, message, true);
@@ -1655,7 +1655,7 @@ void jailbreak()
         if (betaFirmware) {
             resourcesPkgs = [@[@"com.parrotgeek.nobetaalert"] arrayByAddingObjectsFromArray:resourcesPkgs];
         }
-        if (kCFCoreFoundationVersionNumber >= 1535.12) {
+        if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_0) {
             resourcesPkgs = [@[@"com.ps.letmeblock"] arrayByAddingObjectsFromArray:resourcesPkgs];
         }
 
@@ -1920,7 +1920,7 @@ void jailbreak()
                 _assert(removePkg("com.parrotgeek.nobetaalert", true), message, true);
             }
         }
-        if (!(kCFCoreFoundationVersionNumber >= 1535.12)) {
+        if (!(kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_0)) {
             if (pkgIsInstalled("com.ps.letmeblock")) {
                 _assert(removePkg("com.ps.letmeblock", true), message, true);
             }
