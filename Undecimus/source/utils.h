@@ -144,6 +144,9 @@ bool airplaneModeEnabled(void);
 bool installApp(const char *bundle);
 bool rebuildApplicationDatabases(void);
 char *get_path_for_pid(pid_t pid);
+NSDictionary *getPrefsDictionary(void);
+NSString *getBundleIdentifier(void);
+NSString *getPrefsFile(void);
 
 extern NSData *lastSystemOutput;
 
