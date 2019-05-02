@@ -1432,6 +1432,18 @@ char *get_path_for_pid(pid_t pid) {
     return ret;
 }
 
+NSDictionary *getPrefsDictionary() {
+    return [[NSUserDefaults standardUserDefaults] dictionaryRepresentation];
+}
+
+NSString *getBundleIdentifier() {
+    return [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleIdentifier"];
+}
+
+NSString *getPrefsFile() {
+    return [NSString stringWithFormat:@"%@/Library/Preferences/%@.plist", NSHomeDirectory(), getBundleIdentifier()];
+}
+
 __attribute__((constructor))
 static void ctor() {
     toInjectToTrustCache = [NSMutableArray new];

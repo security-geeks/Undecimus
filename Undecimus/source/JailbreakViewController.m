@@ -113,6 +113,7 @@ typedef struct {
     bool ssh_only;
     bool enable_get_task_allow;
     bool set_cs_debugged;
+    bool hide_log_window;
     int exploit;
 } prefs_t;
 
@@ -644,14 +645,8 @@ void jailbreak()
         
         LOG("Loading preferences...");
         SETMESSAGE(NSLocalizedString(@"Failed to load preferences.", nil));
-        NSString *user = @"mobile";
-        userDefaults = [[NSUserDefaults alloc] initWithUser:user];
-        userDefaultsDictionary = [userDefaults dictionaryRepresentation];
-        NSBundle *bundle = [NSBundle mainBundle];
-        NSDictionary *infoDictionary = [bundle infoDictionary];
-        NSString *bundleIdentifierKey = @"CFBundleIdentifier";
-        NSString *bundleIdentifier = [infoDictionary objectForKey:bundleIdentifierKey];
-        prefsFile = [NSString stringWithFormat:@"%@/Library/Preferences/%@.plist", homeDirectory, bundleIdentifier];
+        prefsFile = getPrefsFile();
+        userDefaultsDictionary = getPrefsDictionary();
         bzero(&prefs, sizeof(prefs));
         _assert(load_prefs(&prefs, userDefaultsDictionary), message, true);
         LOG("Successfully loaded preferences.");
@@ -1244,7 +1239,10 @@ void jailbreak()
         if ((v_flag & MNT_RDONLY) || (v_flag & MNT_NOSUID)) {
             v_flag &= ~(MNT_RDONLY | MNT_NOSUID);
             WriteKernel32(v_mount + koffset(KSTRUCT_OFFSET_MOUNT_MNT_FLAG), v_flag & ~MNT_ROOTFS);
-            _assert(runCommand("/sbin/mount", "-u", thedisk, NULL) == ERR_SUCCESS, message, true);
+            char *opts = strdup(thedisk);
+            _assert(opts != NULL, message, true);
+            _assert(mount("apfs", "/", MNT_UPDATE, (void *)&opts) == ERR_SUCCESS, message, true);
+            SafeFreeNULL(opts);
             WriteKernel32(v_mount + koffset(KSTRUCT_OFFSET_MOUNT_MNT_FLAG), v_flag);
         }
         _assert(vnode_put(rootfs_vnode) == ERR_SUCCESS, message, true);
@@ -1722,8 +1720,10 @@ void jailbreak()
             }
         }
         _assert(injectTrustCache(toInjectToTrustCache, GETOFFSET(trustcache), pmap_load_trust_cache) == ERR_SUCCESS, message, true);
+        for (NSString *file in toInjectToTrustCache) {
+            [toInjectToTrustCache removeObject:file];
+        }
         injectedToTrustCache = true;
-        toInjectToTrustCache = nil;
         LOG("Successfully injected trust cache.");
         INSERTSTATUS(NSLocalizedString(@"Injected trust cache.\n", nil));
     }
@@ -2303,11 +2303,30 @@ out:
     });
 }
 
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    prefs_t prefs;
+    bzero(&prefs, sizeof(prefs));
+    load_prefs(&prefs, getPrefsDictionary());
+    if (!jailbreakSupported()) {
+        STATUS(NSLocalizedString(@"Unsupported", nil), false, true);
+    } else if (prefs.restore_rootfs) {
+        STATUS(NSLocalizedString(@"Restore RootFS", nil), true, true);
+    } else if (jailbreakEnabled()) {
+        STATUS(NSLocalizedString(@"Re-Jailbreak", nil), true, true);
+    } else {
+        STATUS(NSLocalizedString(@"Jailbreak", nil), true, true);
+    }
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     _canExit = YES;
     // Do any additional setup after loading the view, typically from a nib.
-    if ([[NSUserDefaults standardUserDefaults] boolForKey:K_HIDE_LOG_WINDOW]) {
+    prefs_t prefs;
+    bzero(&prefs, sizeof(prefs));
+    load_prefs(&prefs, getPrefsDictionary());
+    if (prefs.hide_log_window) {
         _outputView.hidden = YES;
         _outputView = nil;
         _goButtonSpacing.constant += 80;
@@ -2319,11 +2338,6 @@ out:
     uname(&kern);
     LOG("%s", kern.version);
     LOG("Bundled Resources Version: %@", bundledResources);
-    if (jailbreakEnabled()) {
-        STATUS(NSLocalizedString(@"Re-Jailbreak", nil), true, true);
-    } else if (!jailbreakSupported()) {
-        STATUS(NSLocalizedString(@"Unsupported", nil), false, true);
-    }
     if (bundledResources == nil) {
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0ul), ^{
             showAlert(NSLocalizedString(@"Error", nil), NSLocalizedString(@"Bundled Resources version is missing. This build is invalid.", nil), false, false);
