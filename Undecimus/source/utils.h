@@ -114,6 +114,8 @@ int runCommandv(const char *cmd, int argc, const char * const* argv, void (^unre
 int runCommand(const char *cmd, ...);
 NSString *pathForResource(NSString *resource);
 pid_t pidOfProcess(const char *name);
+char *getKernelVersion(void);
+char *getMachineName(void);
 bool kernelVersionContains(const char *string);
 bool machineNameContains(const char *string);
 bool multi_path_tcp_enabled(void);
@@ -146,6 +148,12 @@ bool rebuildApplicationDatabases(void);
 char *get_path_for_pid(pid_t pid);
 NSString *getECID(void);
 NSString *getUDID(void);
+char *sysctlWithName(const char *name);
+char *getOSVersion(void);
+char *getOSProductVersion(void);
+void printOSDetails(void);
+bool isBetaFirmware(void);
+double getUptime(void);
 
 extern NSData *lastSystemOutput;
 

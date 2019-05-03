@@ -4,6 +4,7 @@
 #include <stdint.h>             // uint*_t
 #include <stdbool.h>
 #include <mach-o/loader.h>
+#include <mach/error.h>
 #ifdef __OBJC__
 #include <Foundation/Foundation.h>
 #define RAWLOG(str, args...) do { NSLog(@str, ##args); } while(false)

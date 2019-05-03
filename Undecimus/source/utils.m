@@ -647,22 +647,35 @@ pid_t pidOfProcess(const char *name) {
     return processPid;
 }
 
+char *getKernelVersion() {
+    return sysctlWithName("kern.version");
+}
+
+char *getMachineName() {
+    char *ret = NULL;
+    struct utsname *uts = NULL;
+    uts = (struct utsname *)malloc(sizeof(struct utsname));
+    if (uts == NULL) return false;
+    bzero(uts, sizeof(struct utsname));
+    if (uname(uts) == ERR_SUCCESS) ret = strdup(uts->machine);
+    SafeFreeNULL(uts);
+    return ret;
+}
+
 bool kernelVersionContains(const char *string) {
-    static struct utsname u = { 0 };
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        uname(&u);
-    });
-    return (strstr(u.version, string) != NULL);
+    char *kernelVersion = getKernelVersion();
+    if (kernelVersion == NULL) return false;
+    bool ret = strstr(kernelVersion, string) != NULL;
+    SafeFreeNULL(kernelVersion);
+    return ret;
 }
 
 bool machineNameContains(const char *string) {
-    static struct utsname u = { 0 };
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        uname(&u);
-    });
-    return (strstr(u.machine, string) != NULL);
+    char *machineName = getMachineName();
+    if (machineName == NULL) return false;
+    bool ret = strstr(machineName, string) != NULL;
+    SafeFreeNULL(machineName);
+    return ret;
 }
 
 #define AF_MULTIPATH 39
@@ -1450,6 +1463,86 @@ NSString *getUDID() {
         CFRelease(value);
     }
     return UDID;
+}
+
+char *sysctlWithName(const char *name) {
+    kern_return_t kr = KERN_FAILURE;
+    char *ret = NULL;
+    size_t *size = NULL;
+    size = (size_t *)malloc(sizeof(size_t));
+    bzero(size, sizeof(size_t));
+    if (size == NULL) goto out;
+    if (sysctlbyname(name, NULL, size, NULL, 0) != ERR_SUCCESS) goto out;
+    ret = (char *)malloc(*size);
+    if (ret == NULL) goto out;
+    bzero(ret, *size);
+    if (sysctlbyname(name, ret, size, NULL, 0) != ERR_SUCCESS) goto out;
+    kr = KERN_SUCCESS;
+out:
+    if (kr == KERN_FAILURE) SafeFreeNULL(ret);
+    SafeFreeNULL(size);
+    return ret;
+}
+
+char *getOSVersion() {
+    return sysctlWithName("kern.osversion");
+}
+
+char *getOSProductVersion() {
+    return sysctlWithName("kern.osproductversion");
+}
+
+void printOSDetails() {
+    char *machineName = NULL;
+    char *kernelVersion = NULL;
+    char *OSProductVersion = NULL;
+    char *OSVersion = NULL;
+    machineName = getMachineName();
+    if (machineName == NULL) goto out;
+    kernelVersion = getKernelVersion();
+    if (kernelVersion == NULL) goto out;
+    OSProductVersion = getOSProductVersion();
+    if (OSProductVersion == NULL) goto out;
+    OSVersion = getOSVersion();
+    if (OSVersion == NULL) goto out;
+    LOG("Machine Name: %s", machineName);
+    LOG("Kernel Version: %s", kernelVersion);
+    LOG("System Version: iOS %s (Build: %s)", OSProductVersion, OSVersion);
+out:
+    SafeFreeNULL(machineName);
+    SafeFreeNULL(kernelVersion);
+    SafeFreeNULL(OSProductVersion);
+    SafeFreeNULL(OSVersion);
+}
+
+bool isBetaFirmware() {
+    bool ret = false;
+    char *OSVersion = getOSVersion();
+    if (OSVersion == NULL) return false;
+    if (strlen(OSVersion) > 6) ret = true;
+    SafeFreeNULL(OSVersion);
+    return ret;
+}
+
+double getUptime() {
+    double uptime = 0;
+    size_t *size = NULL;
+    struct timeval *boottime = NULL;
+    size = (size_t *)malloc(sizeof(size_t));
+    if (size == NULL) goto out;
+    bzero(size, sizeof(size_t));
+    *size = sizeof(struct timeval);
+    boottime = (struct timeval *)malloc(*size);
+    if (boottime == NULL) goto out;
+    bzero(boottime, *size);
+    int mib[2] = { CTL_KERN, KERN_BOOTTIME };
+    if (sysctl(mib, 2, boottime, size, NULL, 0) != ERR_SUCCESS) goto out;
+    time_t bsec = boottime->tv_sec, csec = time(NULL);
+    uptime = difftime(csec, bsec);
+out:
+    SafeFreeNULL(size);
+    SafeFreeNULL(boottime);
+    return uptime;
 }
 
 __attribute__((constructor))

@@ -116,7 +116,7 @@ extern int maxStage;
 static NSString *bundledResources = nil;
 
 #define MAX_KASLR_SLIDE 0x21000000
-#define KERNEL_SEARCH_ADDRESS 0xfffffff007004000
+#define STATIC_KERNEL_BASE_ADDRESS 0xfffffff007004000
 
 static void writeTestFile(const char *file) {
     _assert(create_file(file, 0, 0644), message, true);
@@ -388,11 +388,12 @@ uint64_t vnodeForPath(const char *path) {
         LOG("Failed to get vfs_context.");
         goto out;
     }
-    vpp = malloc(sizeof(uint64_t));
+    vpp = (uint64_t *)malloc(sizeof(uint64_t));
     if (vpp == NULL) {
         LOG("Failed to allocate memory.");
         goto out;
     }
+    bzero(vpp, sizeof(sizeof(uint64_t)));
     if (vnode_lookup(path, O_RDONLY, vpp, vfs_context) != ERR_SUCCESS) {
         LOG("Failed to get vnode at path \"%s\".", path);
         goto out;
@@ -505,17 +506,6 @@ out:
     return snap_vnode;
 }
 
-double uptime() {
-    struct timeval boottime;
-    size_t len = sizeof(boottime);
-    int mib[2] = { CTL_KERN, KERN_BOOTTIME };
-    if (sysctl(mib, 2, &boottime, &len, NULL, 0) < 0) {
-        return -1.0;
-    }
-    time_t bsec = boottime.tv_sec, csec = time(NULL);
-    return difftime(csec, bsec);
-}
-
 int waitForFile(const char *filename) {
     int rv = 0;
     rv = access(filename, F_OK);
@@ -575,7 +565,7 @@ void jailbreak()
     NSString *homeDirectory = NSHomeDirectory();
     NSMutableArray *debsToInstall = [NSMutableArray new];
     NSMutableString *status = [NSMutableString string];
-    bool betaFirmware = false;
+    bool betaFirmware = isBetaFirmware();
     time_t start_time = time(NULL);
 #define INSERTSTATUS(x) do { \
     [status appendString:x]; \
@@ -606,10 +596,10 @@ void jailbreak()
             KERN_POINTER_VALID((persisted_cache_blob = dyld_info.all_image_info_addr)) &&
             (persisted_kernel_slide = dyld_info.all_image_info_size) != -1) {
             prepare_for_rw_with_fake_tfp0(persisted_kernel_task_port);
-            kernel_base = KERNEL_SEARCH_ADDRESS + persisted_kernel_slide;
+            kernel_base = STATIC_KERNEL_BASE_ADDRESS + persisted_kernel_slide;
             kernel_slide = persisted_kernel_slide;
 
-            if (persisted_cache_blob != KERNEL_SEARCH_ADDRESS + persisted_kernel_slide) {
+            if (persisted_cache_blob != STATIC_KERNEL_BASE_ADDRESS + persisted_kernel_slide) {
                 size_t blob_size = rk64(persisted_cache_blob);
                 LOG("Restoring persisted offsets cache");
                 struct cache_blob *blob = create_cache_blob(blob_size);
@@ -654,7 +644,7 @@ void jailbreak()
                     if (MACH_PORT_VALID(tfp0) &&
                         kernel_slide_init() &&
                         kernel_slide != -1 &&
-                        KERN_POINTER_VALID(kernel_base = (kernel_slide + KERNEL_SEARCH_ADDRESS))) {
+                        KERN_POINTER_VALID(kernel_base = (kernel_slide + STATIC_KERNEL_BASE_ADDRESS))) {
                         exploit_success = true;
                     }
                     break;
@@ -687,7 +677,7 @@ void jailbreak()
                 }
             }
         }
-        if (kernel_slide == -1 && kernel_base != -1) kernel_slide = (kernel_base - KERNEL_SEARCH_ADDRESS);
+        if (kernel_slide == -1 && kernel_base != -1) kernel_slide = (kernel_base - STATIC_KERNEL_BASE_ADDRESS);
         LOG("tfp0: 0x%x", tfp0);
         LOG("kernel_base: " ADDR, kernel_base);
         LOG("kernel_slide: " ADDR, kernel_slide);
@@ -1567,18 +1557,6 @@ void jailbreak()
             [debsToInstall addObject:substrateDeb];
         }
         
-        char *osversion = NULL;
-        size_t size = 0;
-        _assert(sysctlbyname("kern.osversion", NULL, &size, NULL, 0) == ERR_SUCCESS, message, true);
-        osversion = malloc(size);
-        _assert(osversion != NULL, message, true);
-        _assert(sysctlbyname("kern.osversion", osversion, &size, NULL, 0) == ERR_SUCCESS, message, true);
-        if (strlen(osversion) > 6) {
-            betaFirmware = true;
-            LOG("Detected beta firmware.");
-        }
-        SafeFreeNULL(osversion);
-        
         NSArray *resourcesPkgs = resolveDepsForPkg(@"jailbreak-resources", true);
         _assert(resourcesPkgs != nil, message, true);
         resourcesPkgs = [@[@"system-memory-reset-fix"] arrayByAddingObjectsFromArray:resourcesPkgs];
@@ -2228,9 +2206,7 @@ out:
     sharedController = self;
     bundledResources = bundledResourcesVersion();
     LOG("unc0ver Version: %@", appVersion());
-    struct utsname kern = { 0 };
-    uname(&kern);
-    LOG("%s", kern.version);
+    printOSDetails();
     LOG("Bundled Resources Version: %@", bundledResources);
     if (bundledResources == nil) {
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0ul), ^{

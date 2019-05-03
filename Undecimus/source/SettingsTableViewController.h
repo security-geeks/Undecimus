@@ -40,7 +40,7 @@
 @property (weak, nonatomic) IBOutlet UISwitch *EnableGetTaskAllowSwitch;
 @property (weak, nonatomic) IBOutlet UISwitch *SetCSDebuggedSwitch;
 
-+ (NSDictionary *)_provisioningProfileAtPath:(NSString *)path;
++ (NSDictionary *)provisioningProfileAtPath:(NSString *)path;
 
 @end
 
