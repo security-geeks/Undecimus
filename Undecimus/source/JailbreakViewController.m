@@ -1060,7 +1060,7 @@ void jailbreak()
         bool has_original_snapshot = false;
         const char *thedisk = "/dev/disk0s1s1";
         const char *oldest_snapshot = NULL;
-        _assert(runCommand("/sbin/mount", NULL) == ERR_SUCCESS, message, true);
+        _assert(runCommand("/sbin/mount", NULL) == ERR_SUCCESS, message, false);
         if (snapshots == NULL) {
             close(rootfd);
             
@@ -1173,7 +1173,7 @@ void jailbreak()
             }
         }
         
-        _assert(runCommand("/sbin/mount", NULL) == ERR_SUCCESS, message, true);
+        _assert(runCommand("/sbin/mount", NULL) == ERR_SUCCESS, message, false);
         uint64_t rootfs_vnode = vnodeForPath("/");
         LOG("rootfs_vnode = " ADDR, rootfs_vnode);
         _assert(KERN_POINTER_VALID(rootfs_vnode), message, true);
@@ -1191,7 +1191,7 @@ void jailbreak()
             WriteKernel32(v_mount + koffset(KSTRUCT_OFFSET_MOUNT_MNT_FLAG), v_flag);
         }
         _assert(vnode_put(rootfs_vnode) == ERR_SUCCESS, message, true);
-        _assert(runCommand("/sbin/mount", NULL) == ERR_SUCCESS, message, true);
+        _assert(runCommand("/sbin/mount", NULL) == ERR_SUCCESS, message, false);
         NSString *file = [NSString stringWithContentsOfFile:@"/.installed_unc0ver" encoding:NSUTF8StringEncoding error:nil];
         needStrap = (file == nil || (![file isEqualToString:@""] && ![file isEqualToString:[NSString stringWithFormat:@"%f\n", kCFCoreFoundationVersionNumber]]));
         needStrap &= access("/electra", F_OK) != ERR_SUCCESS;
