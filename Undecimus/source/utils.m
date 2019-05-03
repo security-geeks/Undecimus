@@ -1432,6 +1432,26 @@ char *get_path_for_pid(pid_t pid) {
     return ret;
 }
 
+NSString *getECID() {
+    NSString *ECID = nil;
+    CFStringRef value = MGCopyAnswer(kMGUniqueChipID);
+    if (value != nil) {
+        ECID = [NSString stringWithFormat:@"%@", value];
+        CFRelease(value);
+    }
+    return ECID;
+}
+
+NSString *getUDID() {
+    NSString *UDID = nil;
+    CFStringRef value = MGCopyAnswer(kMGUniqueDeviceID);
+    if (value != nil) {
+        UDID = [NSString stringWithFormat:@"%@", value];
+        CFRelease(value);
+    }
+    return UDID;
+}
+
 __attribute__((constructor))
 static void ctor() {
     toInjectToTrustCache = [NSMutableArray new];
