@@ -573,7 +573,6 @@ void jailbreak()
     bool skipSubstrate = false;
     bool updatedResources = false;
     NSString *homeDirectory = NSHomeDirectory();
-    NSString *temporaryDirectory = NSTemporaryDirectory();
     NSMutableArray *debsToInstall = [NSMutableArray new];
     NSMutableString *status = [NSMutableString string];
     bool betaFirmware = false;
