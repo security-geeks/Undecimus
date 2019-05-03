@@ -58,11 +58,7 @@
 #include "machswap_offsets.h"
 #include "machswap_pwn.h"
 #include "machswap2_pwn.h"
-
-@interface NSUserDefaults ()
-- (id)objectForKey:(id)arg1 inDomain:(id)arg2;
-- (void)setObject:(id)arg1 forKey:(id)arg2 inDomain:(id)arg3;
-@end
+#include "prefs.h"
 
 @interface JailbreakViewController ()
 
@@ -93,28 +89,6 @@ extern int maxStage;
     stage++; \
     STATUSWITHSTAGE(stage, maxStage); \
 } while (false)
-
-typedef struct {
-    bool load_tweaks;
-    bool load_daemons;
-    bool dump_apticket;
-    bool run_uicache;
-    const char *boot_nonce;
-    bool disable_auto_updates;
-    bool disable_app_revokes;
-    bool overwrite_boot_nonce;
-    bool export_kernel_task_port;
-    bool restore_rootfs;
-    bool increase_memory_limit;
-    bool install_cydia;
-    bool install_openssh;
-    bool reload_system_daemons;
-    bool reset_cydia_cache;
-    bool ssh_only;
-    bool enable_get_task_allow;
-    bool set_cs_debugged;
-    int exploit;
-} prefs_t;
 
 #define FINDOFFSET(x, symbol, critical) do { \
     if (!KERN_POINTER_VALID(GETOFFSET(x))) { \
@@ -406,7 +380,7 @@ void unblockDomainWithName(const char *name) {
 }
 
 uint64_t vnodeForPath(const char *path) {
-    static uint64_t vfs_context = 0;
+    uint64_t vfs_context = 0;
     uint64_t *vpp = NULL;
     uint64_t vnode = 0;
     vfs_context = vfs_context_current();
@@ -556,32 +530,6 @@ NSString *hexFromInt(NSInteger val) {
     return [NSString stringWithFormat:@"0x%lX", (long)val];
 }
 
-bool load_prefs(prefs_t *prefs, NSDictionary *defaults) {
-    if (prefs == NULL) {
-        return false;
-    }
-    prefs->load_tweaks = [defaults[K_TWEAK_INJECTION] boolValue];
-    prefs->load_daemons = [defaults[K_LOAD_DAEMONS] boolValue];
-    prefs->dump_apticket = [defaults[K_DUMP_APTICKET] boolValue];
-    prefs->run_uicache = [defaults[K_REFRESH_ICON_CACHE] boolValue];
-    prefs->boot_nonce = [defaults[K_BOOT_NONCE] UTF8String];
-    prefs->disable_auto_updates = [defaults[K_DISABLE_AUTO_UPDATES] boolValue];
-    prefs->disable_app_revokes = [defaults[K_DISABLE_APP_REVOKES] boolValue];
-    prefs->overwrite_boot_nonce = [defaults[K_OVERWRITE_BOOT_NONCE] boolValue];
-    prefs->export_kernel_task_port = [defaults[K_EXPORT_KERNEL_TASK_PORT] boolValue];
-    prefs->restore_rootfs = [defaults[K_RESTORE_ROOTFS] boolValue];
-    prefs->increase_memory_limit = [defaults[K_INCREASE_MEMORY_LIMIT] boolValue];
-    prefs->install_cydia = [defaults[K_INSTALL_CYDIA] boolValue];
-    prefs->install_openssh = [defaults[K_INSTALL_OPENSSH] boolValue];
-    prefs->reload_system_daemons = [defaults[K_RELOAD_SYSTEM_DAEMONS] boolValue];
-    prefs->reset_cydia_cache = [defaults[K_RESET_CYDIA_CACHE] boolValue];
-    prefs->ssh_only = [defaults[K_SSH_ONLY] boolValue];
-    prefs->enable_get_task_allow = [defaults[K_ENABLE_GET_TASK_ALLOW] boolValue];
-    prefs->set_cs_debugged = [defaults[K_SET_CS_DEBUGGED] boolValue];
-    prefs->exploit = [defaults[K_EXPLOIT] intValue];
-    return true;
-}
-
 void waitFor(int seconds) {
     for (int i = 1; i <= seconds; i++) {
         LOG("Waiting (%d/%d)", i, seconds);
@@ -619,14 +567,11 @@ void jailbreak()
     uint64_t myCredAddr = 0;
     uint64_t kernelCredAddr = 0;
     uint64_t Shenanigans = 0;
-    prefs_t prefs;
+    prefs_t *prefs = NULL;
     bool needStrap = false;
     bool needSubstrate = false;
     bool skipSubstrate = false;
     bool updatedResources = false;
-    NSUserDefaults *userDefaults = nil;
-    NSDictionary *userDefaultsDictionary = nil;
-    NSString *prefsFile = nil;
     NSString *homeDirectory = NSHomeDirectory();
     NSString *temporaryDirectory = NSTemporaryDirectory();
     NSMutableArray *debsToInstall = [NSMutableArray new];
@@ -644,16 +589,9 @@ void jailbreak()
         
         LOG("Loading preferences...");
         SETMESSAGE(NSLocalizedString(@"Failed to load preferences.", nil));
-        NSString *user = @"mobile";
-        userDefaults = [[NSUserDefaults alloc] initWithUser:user];
-        userDefaultsDictionary = [userDefaults dictionaryRepresentation];
-        NSBundle *bundle = [NSBundle mainBundle];
-        NSDictionary *infoDictionary = [bundle infoDictionary];
-        NSString *bundleIdentifierKey = @"CFBundleIdentifier";
-        NSString *bundleIdentifier = [infoDictionary objectForKey:bundleIdentifierKey];
-        prefsFile = [NSString stringWithFormat:@"%@/Library/Preferences/%@.plist", homeDirectory, bundleIdentifier];
-        bzero(&prefs, sizeof(prefs));
-        _assert(load_prefs(&prefs, userDefaultsDictionary), message, true);
+        prefs = (prefs_t *)malloc(sizeof(prefs_t));
+        bzero(prefs, sizeof(prefs_t));
+        _assert(load_prefs(prefs), message, true);
         LOG("Successfully loaded preferences.");
     }
     
@@ -699,7 +637,7 @@ void jailbreak()
             usedPersistedKernelTaskPort = true;
             exploit_success = true;
         } else {
-            switch (prefs.exploit) {
+            switch (prefs->exploit) {
                 case empty_list_exploit: {
                     if (vfs_sploit() &&
                         MACH_PORT_VALID(tfp0) &&
@@ -778,6 +716,7 @@ void jailbreak()
         if (!exploit_success) {
             NOTICE(NSLocalizedString(@"Failed to exploit kernel_task. This is not an error. Reboot and try again.", nil), true, false);
             exit(EXIT_FAILURE);
+            _assert(false, message, true);
         }
         INSERTSTATUS(NSLocalizedString(@"Exploited kernel_task.\n", nil));
         LOG("Successfully exploited kernel_task.");
@@ -818,7 +757,8 @@ void jailbreak()
             SETOFFSET(auth_ptrs, true);
             LOG("Detected authentication pointers.");
             pmap_load_trust_cache = _pmap_load_trust_cache;
-            prefs.ssh_only = true;
+            prefs->ssh_only = true;
+            _assert(set_prefs(prefs), message, true);
         }
         if (monolithic_kernel) {
             SETOFFSET(monolithic_kernel, true);
@@ -830,12 +770,12 @@ void jailbreak()
             wk64(offset_options, 0);
             SETOFFSET(unrestrict-options, offset_options);
         }
-        if (prefs.enable_get_task_allow) {
+        if (prefs->enable_get_task_allow) {
             SETOPT(GET_TASK_ALLOW);
         } else {
             UNSETOPT(GET_TASK_ALLOW);
         }
-        if (prefs.set_cs_debugged) {
+        if (prefs->set_cs_debugged) {
             SETOPT(CS_DEBUGGED);
         } else {
             UNSETOPT(CS_DEBUGGED);
@@ -863,7 +803,7 @@ void jailbreak()
         FINDOFFSET(vnode_put, NULL, true);
         FINDOFFSET(kernel_task, NULL, true);
         FINDOFFSET(shenanigans, NULL, true);
-        if (kCFCoreFoundationVersionNumber >= 1535.12) {
+        if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_0) {
             FINDOFFSET(vnode_get_snapshot, NULL, true);
             FINDOFFSET(fs_lookup_snapshot_metadata_by_name_and_return_name, NULL, true);
             FINDOFFSET(apfs_jhash_getvnode, NULL, true);
@@ -948,7 +888,7 @@ void jailbreak()
     UPSTAGE();
     
     {
-        if (prefs.export_kernel_task_port) {
+        if (prefs->export_kernel_task_port) {
             // Export kernel task port.
             LOG("Exporting kernel task port...");
             SETMESSAGE(NSLocalizedString(@"Failed to export kernel task port.", nil));
@@ -980,7 +920,7 @@ void jailbreak()
     UPSTAGE();
     
     {
-        if (prefs.dump_apticket) {
+        if (prefs->dump_apticket) {
             NSString *originalFile = @"/System/Library/Caches/apticket.der";
             NSString *dumpFile = [homeDirectory stringByAppendingPathComponent:@"Documents/apticket.der"];
             if (![sha1sum(originalFile) isEqualToString:sha1sum(dumpFile)]) {
@@ -999,7 +939,7 @@ void jailbreak()
     UPSTAGE();
     
     {
-        if (prefs.overwrite_boot_nonce) {
+        if (prefs->overwrite_boot_nonce) {
             // Unlock nvram.
             
             LOG("Unlocking nvram...");
@@ -1010,12 +950,12 @@ void jailbreak()
             _assert(runCommand("/usr/sbin/nvram", "-p", NULL) == ERR_SUCCESS, message, true);
             const char *bootNonceKey = "com.apple.System.boot-nonce";
             if (runCommand("/usr/sbin/nvram", bootNonceKey, NULL) != ERR_SUCCESS ||
-                strstr(lastSystemOutput.bytes, prefs.boot_nonce) == NULL) {
+                strstr(lastSystemOutput.bytes, prefs->boot_nonce) == NULL) {
                 // Set boot-nonce.
                 
                 LOG("Setting boot-nonce...");
                 SETMESSAGE(NSLocalizedString(@"Failed to set boot-nonce.", nil));
-                _assert(runCommand("/usr/sbin/nvram", [NSString stringWithFormat:@"%s=%s", bootNonceKey, prefs.boot_nonce].UTF8String, NULL) == ERR_SUCCESS, message, true);
+                _assert(runCommand("/usr/sbin/nvram", [NSString stringWithFormat:@"%s=%s", bootNonceKey, prefs->boot_nonce].UTF8String, NULL) == ERR_SUCCESS, message, true);
                 _assert(runCommand("/usr/sbin/nvram", [NSString stringWithFormat:@"%s=%s", kIONVRAMForceSyncNowPropertyKey, bootNonceKey].UTF8String, NULL) == ERR_SUCCESS, message, true);
                 LOG("Successfully set boot-nonce.");
             }
@@ -1058,9 +998,9 @@ void jailbreak()
         SETMESSAGE(NSLocalizedString(@"Failed to log ECID.", nil));
         CFStringRef value = MGCopyAnswer(kMGUniqueChipID);
         if (value != nil) {
-            _assert(modifyPlist(prefsFile, ^(id plist) {
-                plist[K_ECID] = CFBridgingRelease(value);
-            }), message, true);
+            prefs->ecid = [NSString stringWithFormat:@"%@", value].UTF8String;
+            CFRelease(value);
+            _assert(set_prefs(prefs), message, true);
         } else {
             LOG("I couldn't get the ECID... Am I running on a real device?");
         }
@@ -1075,7 +1015,7 @@ void jailbreak()
                                         @"/var/MobileAsset/Assets/com_apple_MobileAsset_SoftwareUpdateDocumentation",
                                         @"/var/MobileAsset/AssetsV2/com_apple_MobileAsset_SoftwareUpdate",
                                         @"/var/MobileAsset/AssetsV2/com_apple_MobileAsset_SoftwareUpdateDocumentation"];
-        if (prefs.disable_auto_updates) {
+        if (prefs->disable_auto_updates) {
             // Disable Auto Updates.
             
             LOG("Disabling Auto Updates...");
@@ -1194,7 +1134,7 @@ void jailbreak()
             uint64_t system_snapshot_vnode = 0;
             uint64_t system_snapshot_vnode_v_data = 0;
             uint32_t system_snapshot_vnode_v_data_flag = 0;
-            if (kCFCoreFoundationVersionNumber >= 1535.12) {
+            if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_0) {
                 system_snapshot_vnode = vnodeForSnapshot(rootfd, systemSnapshot);
                 LOG("system_snapshot_vnode = " ADDR, system_snapshot_vnode);
                 _assert(KERN_POINTER_VALID(system_snapshot_vnode), message, true);
@@ -1206,7 +1146,7 @@ void jailbreak()
                 WriteKernel32(system_snapshot_vnode_v_data + 49, system_snapshot_vnode_v_data_flag & ~0x40);
             }
             _assert(fs_snapshot_rename(rootfd, systemSnapshot, original_snapshot, 0) == ERR_SUCCESS, message, true);
-            if (kCFCoreFoundationVersionNumber >= 1535.12) {
+            if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_0) {
                 WriteKernel32(system_snapshot_vnode_v_data + 49, system_snapshot_vnode_v_data_flag);
                 _assert(vnode_put(system_snapshot_vnode) == ERR_SUCCESS, message, true);
             }
@@ -1219,6 +1159,7 @@ void jailbreak()
             SETMESSAGE(NSLocalizedString(@"Failed to reboot.", nil));
             NOTICE(NSLocalizedString(@"The system snapshot has been successfully renamed. The device will now be restarted.", nil), true, false);
             _assert(reboot(RB_QUICK) == ERR_SUCCESS, message, true);
+            _assert(false, message, true);
             LOG("Successfully rebooted.");
         } else {
             LOG("APFS Snapshots:");
@@ -1244,7 +1185,10 @@ void jailbreak()
         if ((v_flag & MNT_RDONLY) || (v_flag & MNT_NOSUID)) {
             v_flag &= ~(MNT_RDONLY | MNT_NOSUID);
             WriteKernel32(v_mount + koffset(KSTRUCT_OFFSET_MOUNT_MNT_FLAG), v_flag & ~MNT_ROOTFS);
-            _assert(runCommand("/sbin/mount", "-u", thedisk, NULL) == ERR_SUCCESS, message, true);
+            char *opts = strdup(thedisk);
+            _assert(opts != NULL, message, true);
+            _assert(mount("apfs", "/", MNT_UPDATE, (void *)&opts) == ERR_SUCCESS, message, true);
+            SafeFreeNULL(opts);
             WriteKernel32(v_mount + koffset(KSTRUCT_OFFSET_MOUNT_MNT_FLAG), v_flag);
         }
         _assert(vnode_put(rootfs_vnode) == ERR_SUCCESS, message, true);
@@ -1288,7 +1232,7 @@ void jailbreak()
         NSArray <NSString *> *array = @[@"/var/Keychains/ocspcache.sqlite3",
                                         @"/var/Keychains/ocspcache.sqlite3-shm",
                                         @"/var/Keychains/ocspcache.sqlite3-wal"];
-        if (prefs.disable_app_revokes && kCFCoreFoundationVersionNumber < 1535.12) {
+        if (prefs->disable_app_revokes && kCFCoreFoundationVersionNumber < kCFCoreFoundationVersionNumber_iOS_12_0) {
             // Disable app revokes.
             LOG("Disabling app revokes...");
             SETMESSAGE(NSLocalizedString(@"Failed to disable app revokes.", nil));
@@ -1392,7 +1336,7 @@ void jailbreak()
     UPSTAGE();
     
     {
-        if (prefs.restore_rootfs) {
+        if (prefs->restore_rootfs) {
             SETMESSAGE(NSLocalizedString(@"Failed to Restore RootFS.", nil));
             
             // Rename system snapshot.
@@ -1407,7 +1351,7 @@ void jailbreak()
             const char *snapshot = *snapshots;
             LOG("%s", snapshot);
             _assert(snapshot != NULL, message, true);
-            if (kCFCoreFoundationVersionNumber < 1452.23) {
+            if (kCFCoreFoundationVersionNumber < kCFCoreFoundationVersionNumber_iOS_11_3) {
                 const char *systemSnapshotMountPoint = "/private/var/tmp/jb/mnt2";
                 if (is_mountpoint(systemSnapshotMountPoint)) {
                     _assert(unmount(systemSnapshotMountPoint, MNT_FORCE) == ERR_SUCCESS, message, true);
@@ -1466,9 +1410,8 @@ void jailbreak()
             if (cfprefsd_pid != 0) {
                 kill(cfprefsd_pid, SIGSTOP);
             }
-            _assert(modifyPlist(prefsFile, ^(id plist) {
-                plist[K_RESTORE_ROOTFS] = @NO;
-            }), message, true);
+            prefs->restore_rootfs = false;
+            _assert(set_prefs(prefs), message, true);
             if (cfprefsd_pid != 0) {
                 kill(cfprefsd_pid, SIGKILL);
             }
@@ -1483,6 +1426,7 @@ void jailbreak()
             NOTICE(NSLocalizedString(@"RootFS has been successfully restored. The device will now be restarted.", nil), true, false);
             LOG("I don't feel so good...");
             _assert(reboot(RB_QUICK) == ERR_SUCCESS, message, true);
+            _assert(false, message, true);
             LOG("Successfully rebooted.");
         }
     }
@@ -1503,7 +1447,7 @@ void jailbreak()
     
     UPSTAGE();
     
-    if (prefs.ssh_only && needStrap) {
+    if (prefs->ssh_only && needStrap) {
         LOG("Enabling SSH...");
         SETMESSAGE(NSLocalizedString(@"Failed to enable SSH.", nil));
         NSMutableArray *toInject = [NSMutableArray new];
@@ -1582,7 +1526,7 @@ void jailbreak()
             _assert([dropbear_plist writeToFile:@"/jb/Library/LaunchDaemons/dropbear.plist" atomically:YES], message, true);
             _assert(init_file("/jb/Library/LaunchDaemons/dropbear.plist", 0, 0644), message, true);
         }
-        if (prefs.load_daemons) {
+        if (prefs->load_daemons) {
             for (NSString *file in [fileManager contentsOfDirectoryAtPath:@"/jb/Library/LaunchDaemons" error:nil]) {
                 NSString *path = [@"/jb/Library/LaunchDaemons" stringByAppendingPathComponent:file];
                 runCommand("/jb/bin/launchctl", "load", path.UTF8String, NULL);
@@ -1594,7 +1538,7 @@ void jailbreak()
                 }
             }
         }
-        if (prefs.run_uicache) {
+        if (prefs->run_uicache) {
             _assert(runCommand("/jb/usr/bin/uicache", NULL) == ERR_SUCCESS, message, true);
         }
         _assert(runCommand("/jb/bin/launchctl", "stop", "com.apple.cfprefsd.xpc.daemon", NULL) == ERR_SUCCESS, message, true);
@@ -1602,7 +1546,7 @@ void jailbreak()
         INSERTSTATUS(NSLocalizedString(@"Enabled SSH.\n", nil));
     }
     
-    if (auth_ptrs || prefs.ssh_only) {
+    if (auth_ptrs || prefs->ssh_only) {
         goto out;
     }
     
@@ -1657,7 +1601,7 @@ void jailbreak()
         if (betaFirmware) {
             resourcesPkgs = [@[@"com.parrotgeek.nobetaalert"] arrayByAddingObjectsFromArray:resourcesPkgs];
         }
-        if (kCFCoreFoundationVersionNumber >= 1535.12) {
+        if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_0) {
             resourcesPkgs = [@[@"com.ps.letmeblock"] arrayByAddingObjectsFromArray:resourcesPkgs];
         }
 
@@ -1722,8 +1666,10 @@ void jailbreak()
             }
         }
         _assert(injectTrustCache(toInjectToTrustCache, GETOFFSET(trustcache), pmap_load_trust_cache) == ERR_SUCCESS, message, true);
+        for (NSString *file in toInjectToTrustCache.copy) {
+            [toInjectToTrustCache removeObject:file];
+        }
         injectedToTrustCache = true;
-        toInjectToTrustCache = nil;
         LOG("Successfully injected trust cache.");
         INSERTSTATUS(NSLocalizedString(@"Injected trust cache.\n", nil));
     }
@@ -1781,7 +1727,7 @@ void jailbreak()
         // Set Disable Loader.
         LOG("Setting Disable Loader...");
         SETMESSAGE(NSLocalizedString(@"Failed to set Disable Loader.", nil));
-        if (prefs.load_tweaks) {
+        if (prefs->load_tweaks) {
             clean_file("/var/tmp/.substrated_disable_loader");
         } else {
             _assert(create_file("/var/tmp/.substrated_disable_loader", 0, 644), message, true);
@@ -1901,12 +1847,8 @@ void jailbreak()
         // Dpkg and apt both work now
         
         if (needStrap) {
-            if (!prefs.run_uicache) {
-                prefs.run_uicache = true;
-                _assert(modifyPlist(prefsFile, ^(id plist) {
-                    plist[K_REFRESH_ICON_CACHE] = @YES;
-                }), message, true);
-            }
+            prefs->run_uicache = true;
+            _assert(set_prefs(prefs), message, true);
         }
         // Now that things are running, let's install the deb for the files we just extracted
         if (needSubstrate) {
@@ -1920,7 +1862,7 @@ void jailbreak()
                 _assert(removePkg("com.parrotgeek.nobetaalert", true), message, true);
             }
         }
-        if (!(kCFCoreFoundationVersionNumber >= 1535.12)) {
+        if (!(kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_0)) {
             if (pkgIsInstalled("com.ps.letmeblock")) {
                 _assert(removePkg("com.ps.letmeblock", true), message, true);
             }
@@ -1998,7 +1940,7 @@ void jailbreak()
         NSString *jetsamFile = [NSString stringWithFormat:@"/System/Library/LaunchDaemons/com.apple.jetsamproperties.%s.plist", targettype];
         SafeFreeNULL(targettype);
         
-        if (prefs.increase_memory_limit) {
+        if (prefs->increase_memory_limit) {
             // Increase memory limit.
             
             LOG("Increasing memory limit...");
@@ -2024,7 +1966,7 @@ void jailbreak()
     UPSTAGE();
     
     {
-        if (prefs.install_openssh) {
+        if (prefs->install_openssh) {
             // Install OpenSSH.
             LOG("Installing OpenSSH...");
             SETMESSAGE(NSLocalizedString(@"Failed to install OpenSSH.", nil));
@@ -2034,10 +1976,8 @@ void jailbreak()
             // Disable Install OpenSSH.
             LOG("Disabling Install OpenSSH...");
             SETMESSAGE(NSLocalizedString(@"Failed to disable Install OpenSSH.", nil));
-            prefs.install_openssh = false;
-            _assert(modifyPlist(prefsFile, ^(id plist) {
-                plist[K_INSTALL_OPENSSH] = @NO;
-            }), message, true);
+            prefs->install_openssh = false;
+            _assert(set_prefs(prefs), message, true);
             LOG("Successfully disabled Install OpenSSH.");
             
             INSERTSTATUS(NSLocalizedString(@"Installed OpenSSH.\n", nil));
@@ -2052,18 +1992,9 @@ void jailbreak()
             LOG("Removing Electra's Cydia...");
             SETMESSAGE(NSLocalizedString(@"Failed to remove Electra's Cydia.", nil));
             _assert(removePkg("cydia-gui", true), message, true);
-            if (!prefs.install_cydia) {
-                prefs.install_cydia = true;
-                _assert(modifyPlist(prefsFile, ^(id plist) {
-                    plist[K_INSTALL_CYDIA] = @YES;
-                }), message, true);
-            }
-            if (!prefs.run_uicache) {
-                prefs.run_uicache = true;
-                _assert(modifyPlist(prefsFile, ^(id plist) {
-                    plist[K_REFRESH_ICON_CACHE] = @YES;
-                }), message, true);
-            }
+            prefs->install_cydia = true;
+            prefs->run_uicache = true;
+            _assert(set_prefs(prefs), message, true);
             LOG("Successfully removed Electra's Cydia.");
             
             INSERTSTATUS(NSLocalizedString(@"Removed Electra's Cydia.\n", nil));
@@ -2075,10 +2006,8 @@ void jailbreak()
 
             if (pkgIsInstalled("org.coolstar.sileo")) {
                 _assert(removePkg("org.coolstar.sileo", true), message, true);
-                prefs.run_uicache = true;
-                _assert(modifyPlist(prefsFile, ^(id plist) {
-                    plist[K_REFRESH_ICON_CACHE] = @YES;
-                }), message, true); // barf
+                prefs->run_uicache = true;
+                _assert(set_prefs(prefs), message, true);
             }
             clean_file("/etc/apt/sources.list.d/sileo.sources");
             
@@ -2089,37 +2018,19 @@ void jailbreak()
             LOG("Removing Electra's Cydia Upgrade Helper...");
             SETMESSAGE(NSLocalizedString(@"Failed to remove Electra's Cydia Upgrade Helper.", nil));
             _assert(removePkg("cydia-upgrade-helper", true), message, true);
-            if (!prefs.install_cydia) {
-                prefs.install_cydia = true;
-                _assert(modifyPlist(prefsFile, ^(id plist) {
-                    plist[K_INSTALL_CYDIA] = @YES;
-                }), message, true);
-            }
-            if (!prefs.run_uicache) {
-                prefs.run_uicache = true;
-                _assert(modifyPlist(prefsFile, ^(id plist) {
-                    plist[K_REFRESH_ICON_CACHE] = @YES;
-                }), message, true);
-            }
+            prefs->install_cydia = true;
+            prefs->run_uicache = true;
+            _assert(set_prefs(prefs), message, true);
             LOG("Successfully removed Electra's Cydia Upgrade Helper.");
         }
         if (access("/etc/apt/sources.list.d/electra.list", F_OK) == ERR_SUCCESS) {
-            if (!prefs.install_cydia) {
-                prefs.install_cydia = true;
-                _assert(modifyPlist(prefsFile, ^(id plist) {
-                    plist[K_INSTALL_CYDIA] = @YES;
-                }), message, true);
-            }
-            if (!prefs.run_uicache) {
-                prefs.run_uicache = true;
-                _assert(modifyPlist(prefsFile, ^(id plist) {
-                    plist[K_REFRESH_ICON_CACHE] = @YES;
-                }), message, true);
-            }
+            prefs->install_cydia = true;
+            prefs->run_uicache = true;
+            _assert(set_prefs(prefs), message, true);
         }
         // Unblock Saurik's repo if it is blocked.
         unblockDomainWithName("apt.saurik.com");
-        if (prefs.install_cydia) {
+        if (prefs->install_cydia) {
             // Install Cydia.
             
             LOG("Installing Cydia...");
@@ -2132,16 +2043,9 @@ void jailbreak()
             // Disable Install Cydia.
             LOG("Disabling Install Cydia...");
             SETMESSAGE(NSLocalizedString(@"Failed to disable Install Cydia.", nil));
-            prefs.install_cydia = false;
-            _assert(modifyPlist(prefsFile, ^(id plist) {
-                plist[K_INSTALL_CYDIA] = @NO;
-            }), message, true);
-            if (!prefs.run_uicache) {
-                prefs.run_uicache = true;
-                _assert(modifyPlist(prefsFile, ^(id plist) {
-                    plist[K_REFRESH_ICON_CACHE] = @YES;
-                }), message, true);
-            }
+            prefs->install_cydia = false;
+            prefs->run_uicache = true;
+            _assert(set_prefs(prefs), message, true);
             LOG("Successfully disabled Install Cydia.");
             
             INSERTSTATUS(NSLocalizedString(@"Installed Cydia.\n", nil));
@@ -2151,7 +2055,7 @@ void jailbreak()
     UPSTAGE();
     
     {
-        if (prefs.load_daemons) {
+        if (prefs->load_daemons) {
             // Load Daemons.
             
             LOG("Loading Daemons...");
@@ -2177,17 +2081,15 @@ void jailbreak()
     UPSTAGE();
     
     {
-        if (prefs.reset_cydia_cache) {
+        if (prefs->reset_cydia_cache) {
             // Reset Cydia cache.
             
             LOG("Resetting Cydia cache...");
             SETMESSAGE(NSLocalizedString(@"Failed to reset Cydia cache.", nil));
             _assert(clean_file("/var/mobile/Library/Cydia"), message, true);
             _assert(clean_file("/var/mobile/Library/Caches/com.saurik.Cydia"), message, true);
-            prefs.reset_cydia_cache = false;
-            _assert(modifyPlist(prefsFile, ^(id plist) {
-                plist[K_RESET_CYDIA_CACHE] = @NO;
-            }), message, true);
+            prefs->reset_cydia_cache = false;
+            _assert(set_prefs(prefs), message, true);
             LOG("Successfully reset Cydia cache.");
             
             INSERTSTATUS(NSLocalizedString(@"Reset Cydia Cache.\n", nil));
@@ -2197,16 +2099,14 @@ void jailbreak()
     UPSTAGE();
     
     {
-        if (prefs.run_uicache || !canOpen("cydia://")) {
+        if (prefs->run_uicache || !canOpen("cydia://")) {
             // Run uicache.
             
             LOG("Running uicache...");
             SETMESSAGE(NSLocalizedString(@"Failed to run uicache.", nil));
             _assert(runCommand("/usr/bin/uicache", NULL) == ERR_SUCCESS, message, true);
-            prefs.run_uicache = false;
-            _assert(modifyPlist(prefsFile, ^(id plist) {
-                plist[K_REFRESH_ICON_CACHE] = @NO;
-            }), message, true);
+            prefs->run_uicache = false;
+            _assert(set_prefs(prefs), message, true);
             LOG("Successfully ran uicache.");
             INSERTSTATUS(NSLocalizedString(@"Ran uicache.\n", nil));
         }
@@ -2215,7 +2115,7 @@ void jailbreak()
     UPSTAGE();
     
     {
-        if (!(prefs.load_tweaks && prefs.reload_system_daemons)) {
+        if (!(prefs->load_tweaks && prefs->reload_system_daemons)) {
             // Flush preference cache.
             
             LOG("Flushing preference cache...");
@@ -2229,12 +2129,12 @@ void jailbreak()
     UPSTAGE();
     
     {
-        if (prefs.load_tweaks) {
+        if (prefs->load_tweaks) {
             // Load Tweaks.
             
             LOG("Loading Tweaks...");
             SETMESSAGE(NSLocalizedString(@"Failed to load tweaks.", nil));
-            if (prefs.reload_system_daemons) {
+            if (prefs->reload_system_daemons) {
                 rv = system("nohup bash -c \""
                              "sleep 1 ;"
                              "launchctl unload /System/Library/LaunchDaemons/com.apple.backboardd.plist && "
@@ -2276,17 +2176,21 @@ out:
     INSERTSTATUS(([NSString stringWithFormat:@"\nRead %zu bytes from kernel memory\nWrote %zu bytes to kernel memory\n", kreads, kwrites]));
     INSERTSTATUS(([NSString stringWithFormat:@"\nJailbroke in %ld seconds\n", time(NULL) - start_time]));
     STATUS(NSLocalizedString(@"Jailbroken", nil), false, false);
-    showAlert(@"Jailbreak Completed", [NSString stringWithFormat:@"%@\n\n%@\n%@", NSLocalizedString(@"Jailbreak Completed with Status:", nil), status, NSLocalizedString((prefs.exploit == mach_swap_exploit || prefs.exploit == mach_swap_2_exploit) && !usedPersistedKernelTaskPort ? @"The device will now respring." : @"The app will now exit.", nil)], true, false);
+    showAlert(@"Jailbreak Completed", [NSString stringWithFormat:@"%@\n\n%@\n%@", NSLocalizedString(@"Jailbreak Completed with Status:", nil), status, NSLocalizedString((prefs->exploit == mach_swap_exploit || prefs->exploit == mach_swap_2_exploit) && !usedPersistedKernelTaskPort ? @"The device will now respring." : @"The app will now exit.", nil)], true, false);
     if (sharedController.canExit) {
-        if ((prefs.exploit == mach_swap_exploit || prefs.exploit == mach_swap_2_exploit) && !usedPersistedKernelTaskPort) {
+        if ((prefs->exploit == mach_swap_exploit || prefs->exploit == mach_swap_2_exploit) && !usedPersistedKernelTaskPort) {
             WriteKernel64(myCredAddr + koffset(KSTRUCT_OFFSET_UCRED_CR_LABEL), ReadKernel64(kernelCredAddr + koffset(KSTRUCT_OFFSET_UCRED_CR_LABEL)));
             WriteKernel64(myCredAddr + koffset(KSTRUCT_OFFSET_UCRED_CR_UID), 0);
+            SafeFreeNULL(prefs);
             _assert(restartSpringBoard(), message, true);
         } else {
+            SafeFreeNULL(prefs);
             exit(EXIT_SUCCESS);
+            _assert(false, message, true);
         }
     }
     sharedController.canExit = YES;
+    SafeFreeNULL(prefs);
 #undef INSERTSTATUS
 }
 
@@ -2303,15 +2207,36 @@ out:
     });
 }
 
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
+    bzero(prefs, sizeof(prefs_t));
+    load_prefs(prefs);
+    if (!jailbreakSupported()) {
+        STATUS(NSLocalizedString(@"Unsupported", nil), false, true);
+    } else if (prefs->restore_rootfs) {
+        STATUS(NSLocalizedString(@"Restore RootFS", nil), true, true);
+    } else if (jailbreakEnabled()) {
+        STATUS(NSLocalizedString(@"Re-Jailbreak", nil), true, true);
+    } else {
+        STATUS(NSLocalizedString(@"Jailbreak", nil), true, true);
+    }
+    SafeFreeNULL(prefs);
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     _canExit = YES;
     // Do any additional setup after loading the view, typically from a nib.
-    if ([[NSUserDefaults standardUserDefaults] boolForKey:K_HIDE_LOG_WINDOW]) {
+    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
+    bzero(prefs, sizeof(prefs_t));
+    load_prefs(prefs);
+    if (prefs->hide_log_window) {
         _outputView.hidden = YES;
         _outputView = nil;
         _goButtonSpacing.constant += 80;
     }
+    SafeFreeNULL(prefs);
     sharedController = self;
     bundledResources = bundledResourcesVersion();
     LOG("unc0ver Version: %@", appVersion());
@@ -2319,11 +2244,6 @@ out:
     uname(&kern);
     LOG("%s", kern.version);
     LOG("Bundled Resources Version: %@", bundledResources);
-    if (jailbreakEnabled()) {
-        STATUS(NSLocalizedString(@"Re-Jailbreak", nil), true, true);
-    } else if (!jailbreakSupported()) {
-        STATUS(NSLocalizedString(@"Unsupported", nil), false, true);
-    }
     if (bundledResources == nil) {
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0ul), ^{
             showAlert(NSLocalizedString(@"Error", nil), NSLocalizedString(@"Bundled Resources version is missing. This build is invalid.", nil), false, false);

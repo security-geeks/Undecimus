@@ -18,6 +18,10 @@ extern void NSLog(CFStringRef, ...);
 #define SafeFree(x) do { if (x) free(x); } while(false)
 #define SafeFreeNULL(x) do { SafeFree(x); (x) = NULL; } while(false)
 
+#define kCFCoreFoundationVersionNumber_iOS_12_0 1535.12
+#define kCFCoreFoundationVersionNumber_iOS_11_3 1452.23
+#define kCFCoreFoundationVersionNumber_iOS_11_0 1443.00
+
 extern uint64_t offset_options;
 #define OPT(x) (offset_options?((rk64(offset_options) & OPT_ ##x)?true:false):false)
 #define SETOPT(x) (offset_options?wk64(offset_options, rk64(offset_options) | OPT_ ##x):0)
