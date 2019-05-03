@@ -1351,21 +1351,25 @@ void jailbreak()
             const char *snapshot = *snapshots;
             LOG("%s", snapshot);
             _assert(snapshot != NULL, message, true);
+            const char *systemSnapshotMountPoint = "/private/var/tmp/jb/mnt2";
+            if (is_mountpoint(systemSnapshotMountPoint)) {
+                _assert(unmount(systemSnapshotMountPoint, MNT_FORCE) == ERR_SUCCESS, message, true);
+            }
+            _assert(clean_file(systemSnapshotMountPoint), message, true);
+            _assert(ensure_directory(systemSnapshotMountPoint, 0, 0755), message, true);
+            _assert(fs_snapshot_mount(rootfd, systemSnapshotMountPoint, snapshot, 0) == ERR_SUCCESS, message, true);
+            const char *systemSnapshotLaunchdPath = [@(systemSnapshotMountPoint) stringByAppendingPathComponent:@"sbin/launchd"].UTF8String;
+            _assert(waitForFile(systemSnapshotLaunchdPath) == ERR_SUCCESS, message, true);
+            _assert(extractDebsForPkg(@"rsync", nil, false), message, true);
+            _assert(extractDebsForPkg(@"uikittools", nil, false), message, true);
+            _assert(injectTrustCache(@[@"/usr/bin/rsync", @"/usr/bin/uicache"], GETOFFSET(trustcache), pmap_load_trust_cache) == ERR_SUCCESS, message, true);
             if (kCFCoreFoundationVersionNumber < kCFCoreFoundationVersionNumber_iOS_11_3) {
-                const char *systemSnapshotMountPoint = "/private/var/tmp/jb/mnt2";
-                if (is_mountpoint(systemSnapshotMountPoint)) {
-                    _assert(unmount(systemSnapshotMountPoint, MNT_FORCE) == ERR_SUCCESS, message, true);
-                }
-                _assert(clean_file(systemSnapshotMountPoint), message, true);
-                _assert(ensure_directory(systemSnapshotMountPoint, 0, 0755), message, true);
-                _assert(fs_snapshot_mount(rootfd, systemSnapshotMountPoint, snapshot, 0) == ERR_SUCCESS, message, true);
-                const char *systemSnapshotLaunchdPath = [@(systemSnapshotMountPoint) stringByAppendingPathComponent:@"sbin/launchd"].UTF8String;
-                _assert(waitForFile(systemSnapshotLaunchdPath) == ERR_SUCCESS, message, true);
-                _assert(extractDebsForPkg(@"rsync", nil, false), message, true);
-                _assert(injectTrustCache(@[@"/usr/bin/rsync"], GETOFFSET(trustcache), pmap_load_trust_cache) == ERR_SUCCESS, message, true);
-                _assert(runCommand("/usr/bin/rsync", "-vaxcH", "--progress", "--delete-after", "--exclude=/Developer", [@(systemSnapshotMountPoint) stringByAppendingPathComponent:@"."].UTF8String, "/", NULL) == 0, message, true);
-                unmount(systemSnapshotMountPoint, MNT_FORCE);
+                _assert(runCommand("/usr/bin/rsync", "-vaxcH", "--progress", "--delete-after", "--exclude=/Developer", "--exclude=/usr/bin/uicache", [@(systemSnapshotMountPoint) stringByAppendingPathComponent:@"."].UTF8String, "/", NULL) == 0, message, true);
             } else {
+                _assert(runCommand("/usr/bin/rsync", "-vaxcH", "--progress", "--delete-after", [@(systemSnapshotMountPoint) stringByAppendingPathComponent:@"Applications/."].UTF8String, "/Applications", NULL) == 0, message, true);
+            }
+            _assert(unmount(systemSnapshotMountPoint, MNT_FORCE) == ERR_SUCCESS, message, true);
+            if (!(kCFCoreFoundationVersionNumber < kCFCoreFoundationVersionNumber_iOS_11_3)) {
                 char *systemSnapshot = copySystemSnapshot();
                 _assert(systemSnapshot != NULL, message, true);
                 _assert(fs_snapshot_rename(rootfd, snapshot, systemSnapshot, 0) == ERR_SUCCESS, message, true);
@@ -1373,6 +1377,8 @@ void jailbreak()
             }
             close(rootfd);
             SafeFreeNULL(snapshots);
+            _assert(runCommand("/usr/bin/uicache", NULL) == ERR_SUCCESS, message, true);
+            _assert(clean_file("/usr/bin/uicache"), message, true);
             LOG("Successfully renamed system snapshot back.");
             
             // Clean up.
@@ -1406,15 +1412,8 @@ void jailbreak()
             
             LOG("Disabling RootFS Restore...");
             SETMESSAGE(NSLocalizedString(@"Failed to disable RootFS Restore.", nil));
-            pid_t cfprefsd_pid = pidOfProcess("/usr/libexec/cfprefsd");
-            if (cfprefsd_pid != 0) {
-                kill(cfprefsd_pid, SIGSTOP);
-            }
             prefs->restore_rootfs = false;
             _assert(set_prefs(prefs), message, true);
-            if (cfprefsd_pid != 0) {
-                kill(cfprefsd_pid, SIGKILL);
-            }
             LOG("Successfully disabled RootFS Restore.");
             
             INSERTSTATUS(NSLocalizedString(@"Restored RootFS.\n", nil));
