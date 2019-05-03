@@ -44,12 +44,11 @@ void injectDir(NSString *dir) {
     LOG("Will inject %lu files for %@", (unsigned long)toInject.count, dir);
     if (toInject.count > 0) {
         if (injectedToTrustCache) {
-            LOG("Can't inject files - Trust cache already injected");
-        } else {
-            for (NSString *path in toInject) {
-                if (![toInjectToTrustCache containsObject:path]) {
-                    [toInjectToTrustCache addObject:path];
-                }
+            LOG("Warning: Trust cache already injected");
+        }
+        for (NSString *path in toInject) {
+            if (![toInjectToTrustCache containsObject:path]) {
+                [toInjectToTrustCache addObject:path];
             }
         }
     }
@@ -274,12 +273,11 @@ bool extractDeb(NSString *debPath) {
         LOG("Will inject %lu files for %@", (unsigned long)toInject.count, debPath);
         if (toInject.count > 0) {
             if (injectedToTrustCache) {
-                LOG("Can't inject files - Trust cache already injected");
-            } else {
-                for (NSString *path in toInject) {
-                    if (![toInjectToTrustCache containsObject:path]) {
-                        [toInjectToTrustCache addObject:path];
-                    }
+                LOG("Warning: Trust cache already injected");
+            }
+            for (NSString *path in toInject) {
+                if (![toInjectToTrustCache containsObject:path]) {
+                    [toInjectToTrustCache addObject:path];
                 }
             }
         }
