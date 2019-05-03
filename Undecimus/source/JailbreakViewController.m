@@ -567,7 +567,7 @@ void jailbreak()
     uint64_t myCredAddr = 0;
     uint64_t kernelCredAddr = 0;
     uint64_t Shenanigans = 0;
-    prefs_t *prefs = NULL;
+    prefs_t *prefs = copy_prefs();
     bool needStrap = false;
     bool needSubstrate = false;
     bool skipSubstrate = false;
@@ -580,18 +580,6 @@ void jailbreak()
 #define INSERTSTATUS(x) do { \
     [status appendString:x]; \
 } while (false)
-    
-    UPSTAGE();
-    
-    {
-        // Load preferences.
-        
-        LOG("Loading preferences...");
-        SETMESSAGE(NSLocalizedString(@"Failed to load preferences.", nil));
-        prefs = new_prefs();
-        _assert(load_prefs(prefs), message, true);
-        LOG("Successfully loaded preferences.");
-    }
     
     UPSTAGE();
     
@@ -2213,8 +2201,7 @@ out:
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
-    prefs_t *prefs = new_prefs();
-    load_prefs(prefs);
+    prefs_t *prefs = copy_prefs();
     if (!jailbreakSupported()) {
         STATUS(NSLocalizedString(@"Unsupported", nil), false, true);
     } else if (prefs->restore_rootfs) {
@@ -2231,8 +2218,7 @@ out:
     [super viewDidLoad];
     _canExit = YES;
     // Do any additional setup after loading the view, typically from a nib.
-    prefs_t *prefs = new_prefs();
-    load_prefs(prefs);
+    prefs_t *prefs = copy_prefs();
     if (prefs->hide_log_window) {
         _outputView.hidden = YES;
         _outputView = nil;

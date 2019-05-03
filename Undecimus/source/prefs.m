@@ -26,6 +26,12 @@ prefs_t *new_prefs() {
     return prefs;
 }
 
+prefs_t *copy_prefs() {
+    prefs_t *prefs = new_prefs();
+    load_prefs(prefs);
+    return prefs;
+}
+
 void release_prefs(prefs_t **prefs) {
     SafeFreeNULL(*prefs);
 }
