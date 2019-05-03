@@ -171,8 +171,7 @@
     uname(&u);
     NSDictionary *systemVersion = [NSDictionary dictionaryWithContentsOfFile:@"/System/Library/CoreServices/SystemVersion.plist"];
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    prefs_t *prefs = malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     NSDictionary *diagnostics = @{
         @"Sysname": @(u.sysname),
@@ -210,7 +209,7 @@
         @"AppVersion": appVersion(),
         @"LogFile": [NSString stringWithContentsOfFile:getLogFile() encoding:NSUTF8StringEncoding error:nil]
     };
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     return diagnostics;
 }
 
@@ -247,8 +246,7 @@
 }
 
 - (void)reloadData {
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     [self.TweakInjectionSwitch setOn:(BOOL)prefs->load_tweaks];
     [self.LoadDaemonsSwitch setOn:(BOOL)prefs->load_daemons];
@@ -283,49 +281,45 @@
     [self.SetCSDebuggedSwitch setOn:(BOOL)prefs->set_cs_debugged];
     [self.RestartSpringBoardButton setEnabled:respringSupported()];
     [self.restartButton setEnabled:restartSupported()];
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     [self.tableView reloadData];
 }
 
 - (IBAction)TweakInjectionSwitchTriggered:(id)sender {
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     prefs->load_tweaks = (bool)self.TweakInjectionSwitch.isOn;
     set_prefs(prefs);
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     [self reloadData];
 }
 
 - (IBAction)LoadDaemonsSwitchTriggered:(id)sender {
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     prefs->load_daemons = (bool)self.LoadDaemonsSwitch.isOn;
     set_prefs(prefs);
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     [self reloadData];
 }
 
 - (IBAction)DumpAPTicketSwitchTriggered:(id)sender {
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     prefs->dump_apticket = (bool)self.DumpAPTicketSwitch.isOn;
     set_prefs(prefs);
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     [self reloadData];
 }
 
 - (IBAction)BootNonceTextFieldTriggered:(id)sender {
     uint64_t val = 0;
     if ([[NSScanner scannerWithString:[self.BootNonceTextField text]] scanHexLongLong:&val] && val != HUGE_VAL && val != -HUGE_VAL) {
-        prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-        bzero(prefs, sizeof(prefs_t));
+        prefs_t *prefs = new_prefs();
         load_prefs(prefs);
         prefs->boot_nonce = [NSString stringWithFormat:@ADDR, val].UTF8String;
         set_prefs(prefs);
-        SafeFreeNULL(prefs);
+        release_prefs(&prefs);
     } else {
         UIAlertController *alertController = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Invalid Entry", nil) message:NSLocalizedString(@"The boot nonce entered could not be parsed", nil) preferredStyle:UIAlertControllerStyleAlert];
         UIAlertAction *OK = [UIAlertAction actionWithTitle:NSLocalizedString(@"OK", nil) style:UIAlertActionStyleDefault handler:nil];
@@ -336,32 +330,29 @@
 }
 
 - (IBAction)RefreshIconCacheSwitchTriggered:(id)sender {
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     prefs->run_uicache = (bool)self.RefreshIconCacheSwitch.isOn;
     set_prefs(prefs);
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     [self reloadData];
 }
 
 - (IBAction)KernelExploitSegmentedControl:(id)sender {
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     prefs->exploit = (int)self.KernelExploitSegmentedControl.selectedSegmentIndex;
     set_prefs(prefs);
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     [self reloadData];
 }
 
 - (IBAction)DisableAppRevokesSwitchTriggered:(id)sender {
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     prefs->disable_app_revokes = (bool)self.DisableAppRevokesSwitch.isOn;
     set_prefs(prefs);
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     [self reloadData];
 }
 
@@ -391,12 +382,11 @@
 }
 
 - (IBAction)DisableAutoUpdatesSwitchTriggered:(id)sender {
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     prefs->disable_auto_updates = (bool)self.DisableAutoUpdatesSwitch.isOn;
     set_prefs(prefs);
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     [self reloadData];
 }
 
@@ -419,23 +409,21 @@
 }
 
 - (IBAction)OverwriteBootNonceSwitchTriggered:(id)sender {
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     prefs->overwrite_boot_nonce = (bool)self.OverwriteBootNonceSwitch.isOn;
     set_prefs(prefs);
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     [self reloadData];
 }
 
 - (IBAction)tappedOnCopyNonce:(id)sender{
     UIAlertController *copyBootNonceAlert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Copy boot nonce?", nil) message:NSLocalizedString(@"Would you like to copy nonce generator to clipboard?", nil) preferredStyle:UIAlertControllerStyleAlert];
     UIAlertAction *copyAction = [UIAlertAction actionWithTitle:NSLocalizedString(@"Yes", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
-        prefs_t *prefs = malloc(sizeof(prefs_t));
-        bzero(prefs, sizeof(prefs_t));
+        prefs_t *prefs = new_prefs();
         load_prefs(prefs);
         [[UIPasteboard generalPasteboard] setString:@(prefs->boot_nonce)];
-        SafeFreeNULL(prefs);
+        release_prefs(&prefs);
     }];
     UIAlertAction *noAction = [UIAlertAction actionWithTitle:NSLocalizedString(@"No", nil) style:UIAlertActionStyleCancel handler:nil];
     [copyBootNonceAlert addAction:copyAction];
@@ -446,11 +434,10 @@
 - (IBAction)tappedOnCopyECID:(id)sender {
     UIAlertController *copyBootNonceAlert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Copy ECID?", nil) message:NSLocalizedString(@"Would you like to ECID to clipboard?", nil) preferredStyle:UIAlertControllerStyleAlert];
     UIAlertAction *copyAction = [UIAlertAction actionWithTitle:NSLocalizedString(@"Yes", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
-        prefs_t *prefs = malloc(sizeof(prefs_t));
-        bzero(prefs, sizeof(prefs_t));
+        prefs_t *prefs = new_prefs();
         load_prefs(prefs);
         [[UIPasteboard generalPasteboard] setString:hexFromInt(@(prefs->ecid).integerValue)];
-        SafeFreeNULL(prefs);
+        release_prefs(&prefs);
     }];
     UIAlertAction *noAction = [UIAlertAction actionWithTitle:NSLocalizedString(@"No", nil) style:UIAlertActionStyleCancel handler:nil];
     [copyBootNonceAlert addAction:copyAction];
@@ -472,42 +459,38 @@
 }
 
 - (IBAction)exportKernelTaskPortSwitchTriggered:(id)sender {
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     prefs->export_kernel_task_port = (bool)self.ExportKernelTaskPortSwitch.isOn;
     set_prefs(prefs);
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     [self reloadData];
 }
 
 - (IBAction)RestoreRootFSSwitchTriggered:(id)sender {
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     prefs->restore_rootfs = (bool)self.RestoreRootFSSwitch.isOn;
     set_prefs(prefs);
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     [self reloadData];
 }
 
 - (IBAction)installCydiaSwitchTriggered:(id)sender {
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     prefs->install_cydia = (bool)self.installCydiaSwitch.isOn;
     set_prefs(prefs);
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     [self reloadData];
 }
 
 - (IBAction)installSSHSwitchTriggered:(id)sender {
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     prefs->install_openssh = (bool)self.installSSHSwitch.isOn;
     set_prefs(prefs);
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     [self reloadData];
 }
 
@@ -517,32 +500,29 @@
 }
 
 - (IBAction)IncreaseMemoryLimitSwitch:(id)sender {
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     prefs->increase_memory_limit = (bool)self.IncreaseMemoryLimitSwitch.isOn;
     set_prefs(prefs);
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     [self reloadData];
 }
 
 - (IBAction)tappedOnAutomaticallySelectExploit:(id)sender {
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     prefs->exploit = (int)recommendedJailbreakSupport();
     set_prefs(prefs);
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     [self reloadData];
 }
 
 - (IBAction)reloadSystemDaemonsSwitchTriggered:(id)sender {
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     prefs->reload_system_daemons = (bool)self.ReloadSystemDaemonsSwitch.isOn;
     set_prefs(prefs);
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     [self reloadData];
 }
 
@@ -572,12 +552,11 @@
 }
 
 - (IBAction)hideLogWindowSwitchTriggered:(id)sender {
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     prefs->hide_log_window = (bool)self.HideLogWindowSwitch.isOn;
     set_prefs(prefs);
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     [self reloadData];
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0ul), ^{
         NOTICE(NSLocalizedString(@"Preference was changed. The app will now exit.", nil), true, false);
@@ -586,42 +565,38 @@
 }
 
 - (IBAction)resetCydiaCacheSwitchTriggered:(id)sender {
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     prefs->reset_cydia_cache = (bool)self.ResetCydiaCacheSwitch.isOn;
     set_prefs(prefs);
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     [self reloadData];
 }
 
 - (IBAction)sshOnlySwitchTriggered:(id)sender {
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     prefs->ssh_only = (bool)self.SSHOnlySwitch.isOn;
     set_prefs(prefs);
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     [self reloadData];
 }
 
 - (IBAction)enableGetTaskAllowSwitchTriggered:(id)sender {
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     prefs->enable_get_task_allow = (bool)self.EnableGetTaskAllowSwitch.isOn;
     set_prefs(prefs);
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     [self reloadData];
 }
 
 - (IBAction)setCSDebugged:(id)sender {
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     prefs->set_cs_debugged = (bool)self.SetCSDebuggedSwitch.isOn;
     set_prefs(prefs);
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     [self reloadData];
 }
 

@@ -19,6 +19,17 @@
 static NSUserDefaults *userDefaults = nil;
 static NSString *prefsFile = nil;
 
+prefs_t *new_prefs() {
+    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
+    assert(prefs != NULL);
+    bzero(prefs, sizeof(prefs_t));
+    return prefs;
+}
+
+void release_prefs(prefs_t **prefs) {
+    SafeFreeNULL(*prefs);
+}
+
 bool load_prefs(prefs_t *prefs) {
     if (prefs == NULL) {
         return false;

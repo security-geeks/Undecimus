@@ -588,8 +588,7 @@ void jailbreak()
         
         LOG("Loading preferences...");
         SETMESSAGE(NSLocalizedString(@"Failed to load preferences.", nil));
-        prefs = (prefs_t *)malloc(sizeof(prefs_t));
-        bzero(prefs, sizeof(prefs_t));
+        prefs = new_prefs();
         _assert(load_prefs(prefs), message, true);
         LOG("Successfully loaded preferences.");
     }
@@ -2186,16 +2185,16 @@ out:
         if ((prefs->exploit == mach_swap_exploit || prefs->exploit == mach_swap_2_exploit) && !usedPersistedKernelTaskPort) {
             WriteKernel64(myCredAddr + koffset(KSTRUCT_OFFSET_UCRED_CR_LABEL), ReadKernel64(kernelCredAddr + koffset(KSTRUCT_OFFSET_UCRED_CR_LABEL)));
             WriteKernel64(myCredAddr + koffset(KSTRUCT_OFFSET_UCRED_CR_UID), 0);
-            SafeFreeNULL(prefs);
+            release_prefs(&prefs);
             _assert(restartSpringBoard(), message, true);
         } else {
-            SafeFreeNULL(prefs);
+            release_prefs(&prefs);
             exit(EXIT_SUCCESS);
             _assert(false, message, true);
         }
     }
     sharedController.canExit = YES;
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
 #undef INSERTSTATUS
 }
 
@@ -2214,8 +2213,7 @@ out:
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     if (!jailbreakSupported()) {
         STATUS(NSLocalizedString(@"Unsupported", nil), false, true);
@@ -2226,22 +2224,21 @@ out:
     } else {
         STATUS(NSLocalizedString(@"Jailbreak", nil), true, true);
     }
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
 }
 
 - (void)viewDidLoad {
     [super viewDidLoad];
     _canExit = YES;
     // Do any additional setup after loading the view, typically from a nib.
-    prefs_t *prefs = (prefs_t *)malloc(sizeof(prefs_t));
-    bzero(prefs, sizeof(prefs_t));
+    prefs_t *prefs = new_prefs();
     load_prefs(prefs);
     if (prefs->hide_log_window) {
         _outputView.hidden = YES;
         _outputView = nil;
         _goButtonSpacing.constant += 80;
     }
-    SafeFreeNULL(prefs);
+    release_prefs(&prefs);
     sharedController = self;
     bundledResources = bundledResourcesVersion();
     LOG("unc0ver Version: %@", appVersion());

@@ -58,6 +58,8 @@ typedef struct {
     int exploit;
 } prefs_t;
 
+prefs_t *new_prefs(void);
+void release_prefs(prefs_t **prefs);
 bool load_prefs(prefs_t *prefs);
 bool set_prefs(prefs_t *prefs);
 void register_default_prefs(void);
