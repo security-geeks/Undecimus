@@ -996,10 +996,9 @@ void jailbreak()
         
         LOG("Logging ECID...");
         SETMESSAGE(NSLocalizedString(@"Failed to log ECID.", nil));
-        CFStringRef value = MGCopyAnswer(kMGUniqueChipID);
-        if (value != nil) {
-            prefs->ecid = [NSString stringWithFormat:@"%@", value].UTF8String;
-            CFRelease(value);
+        NSString *ECID = getECID();
+        if (ECID != nil) {
+            prefs->ecid = ECID.UTF8String;
             _assert(set_prefs(prefs), message, true);
         } else {
             LOG("I couldn't get the ECID... Am I running on a real device?");
@@ -1061,7 +1060,7 @@ void jailbreak()
         bool has_original_snapshot = false;
         const char *thedisk = "/dev/disk0s1s1";
         const char *oldest_snapshot = NULL;
-        _assert(runCommand("/sbin/mount", NULL) == ERR_SUCCESS, message, true);
+        _assert(runCommand("/sbin/mount", NULL) == ERR_SUCCESS, message, false);
         if (snapshots == NULL) {
             close(rootfd);
             
@@ -1174,7 +1173,7 @@ void jailbreak()
             }
         }
         
-        _assert(runCommand("/sbin/mount", NULL) == ERR_SUCCESS, message, true);
+        _assert(runCommand("/sbin/mount", NULL) == ERR_SUCCESS, message, false);
         uint64_t rootfs_vnode = vnodeForPath("/");
         LOG("rootfs_vnode = " ADDR, rootfs_vnode);
         _assert(KERN_POINTER_VALID(rootfs_vnode), message, true);
@@ -1192,12 +1191,12 @@ void jailbreak()
             WriteKernel32(v_mount + koffset(KSTRUCT_OFFSET_MOUNT_MNT_FLAG), v_flag);
         }
         _assert(vnode_put(rootfs_vnode) == ERR_SUCCESS, message, true);
-        _assert(runCommand("/sbin/mount", NULL) == ERR_SUCCESS, message, true);
+        _assert(runCommand("/sbin/mount", NULL) == ERR_SUCCESS, message, false);
         NSString *file = [NSString stringWithContentsOfFile:@"/.installed_unc0ver" encoding:NSUTF8StringEncoding error:nil];
-        needStrap = (file == nil ||
-                    (![file isEqualToString:@""] &&
-                    ![file isEqualToString:[NSString stringWithFormat:@"%f\n", kCFCoreFoundationVersionNumber]]))
-                    && access("/electra", F_OK) != ERR_SUCCESS;
+        needStrap = file == nil;
+        needStrap |= ![file isEqualToString:@""] && ![file isEqualToString:[NSString stringWithFormat:@"%f\n", kCFCoreFoundationVersionNumber]];
+        needStrap &= access("/electra", F_OK) != ERR_SUCCESS;
+        needStrap &= access("/chimera", F_OK) != ERR_SUCCESS;
         if (needStrap)
             LOG("We need strap.");
         if (!has_original_snapshot) {
@@ -1665,9 +1664,7 @@ void jailbreak()
             }
         }
         _assert(injectTrustCache(toInjectToTrustCache, GETOFFSET(trustcache), pmap_load_trust_cache) == ERR_SUCCESS, message, true);
-        for (NSString *file in toInjectToTrustCache.copy) {
-            [toInjectToTrustCache removeObject:file];
-        }
+        [toInjectToTrustCache removeAllObjects];
         injectedToTrustCache = true;
         LOG("Successfully injected trust cache.");
         INSERTSTATUS(NSLocalizedString(@"Injected trust cache.\n", nil));
@@ -1736,10 +1733,11 @@ void jailbreak()
         // Run substrate
         LOG("Starting Substrate...");
         SETMESSAGE(NSLocalizedString(skipSubstrate?@"Failed to restart Substrate":@"Failed to start Substrate.", nil));
-        if (!is_symlink("/usr/lib/substrate") && !is_directory("/Library/substrate")) {
+        if (access("/usr/lib/substrate", F_OK) == ERR_SUCCESS && !is_symlink("/usr/lib/substrate")) {
+            _assert(clean_file("/Library/substrate"), message, true);
             _assert([[NSFileManager defaultManager] moveItemAtPath:@"/usr/lib/substrate" toPath:@"/Library/substrate" error:nil], message, true);
-            _assert(ensure_symlink("/Library/substrate", "/usr/lib/substrate"), message, true);
         }
+        _assert(ensure_symlink("/Library/substrate", "/usr/lib/substrate"), message, true);
         _assert(runCommand("/usr/libexec/substrate", NULL) == ERR_SUCCESS, message, skipSubstrate?false:true);
         LOG("Successfully started Substrate.");
         
@@ -1756,6 +1754,9 @@ void jailbreak()
         if (pkgIsBy("CoolStar", "lzma")) {
             removePkg("lzma", true);
             extractDebsForPkg(@"lzma", debsToInstall, false);
+            _assert(injectTrustCache(toInjectToTrustCache, GETOFFSET(trustcache), pmap_load_trust_cache) == ERR_SUCCESS, message, true);
+            [toInjectToTrustCache removeAllObjects];
+            injectedToTrustCache = true;
         }
         
         if (pkgIsInstalled("openssl") && compareInstalledVersion("openssl", "lt", "1.0.2q")) {
@@ -1765,6 +1766,9 @@ void jailbreak()
         if (!pkgIsConfigured("dpkg") || pkgIsBy("CoolStar", "dpkg")) {
             LOG("Extracting dpkg...");
             _assert(extractDebsForPkg(@"dpkg", debsToInstall, false), message, true);
+            _assert(injectTrustCache(toInjectToTrustCache, GETOFFSET(trustcache), pmap_load_trust_cache) == ERR_SUCCESS, message, true);
+            [toInjectToTrustCache removeAllObjects];
+            injectedToTrustCache = true;
             NSString *dpkg_deb = debForPkg(@"dpkg");
             _assert(installDeb(dpkg_deb.UTF8String, true), message, true);
             [debsToInstall removeObject:dpkg_deb];
@@ -1882,7 +1886,9 @@ void jailbreak()
         clean_file("/jb/lzma");
         clean_file("/jb/substrate.tar.lzma");
         clean_file("/electra");
+        clean_file("/chimera");
         clean_file("/.bootstrapped_electra");
+        clean_file([NSString stringWithFormat:@"/etc/.installed-chimera-%@", getUDID()].UTF8String);
         clean_file("/usr/lib/libjailbreak.dylib");
 
         LOG("Successfully extracted bootstrap.");
@@ -2022,7 +2028,8 @@ void jailbreak()
             _assert(set_prefs(prefs), message, true);
             LOG("Successfully removed Electra's Cydia Upgrade Helper.");
         }
-        if (access("/etc/apt/sources.list.d/electra.list", F_OK) == ERR_SUCCESS) {
+        if (access("/etc/apt/sources.list.d/electra.list", F_OK) == ERR_SUCCESS ||
+            access("/etc/apt/sources.list.d/chimera.sources", F_OK) == ERR_SUCCESS) {
             prefs->install_cydia = true;
             prefs->run_uicache = true;
             _assert(set_prefs(prefs), message, true);
