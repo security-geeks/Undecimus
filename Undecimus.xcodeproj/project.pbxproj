@@ -49,6 +49,8 @@
 		21C130EB214C03690021AA9D /* CreditsTableViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 21C130EA214C03690021AA9D /* CreditsTableViewController.m */; };
 		21C13119214D268F0021AA9D /* multi_path_sploit.c in Sources */ = {isa = PBXBuildFile; fileRef = 21C13117214D268F0021AA9D /* multi_path_sploit.c */; settings = {COMPILER_FLAGS = "-Wno-everything"; }; };
 		21C1312F214E69F80021AA9D /* empty_list_sploit.c in Sources */ = {isa = PBXBuildFile; fileRef = 21C0FC8521369EE900849420 /* empty_list_sploit.c */; settings = {COMPILER_FLAGS = "-Wno-everything"; }; };
+		21CC3905227CDFDE0072D572 /* prefs.m in Sources */ = {isa = PBXBuildFile; fileRef = 21CC3902227CDFDE0072D572 /* prefs.m */; };
+		21CC3906227CDFDE0072D572 /* diagnostics.m in Sources */ = {isa = PBXBuildFile; fileRef = 21CC3903227CDFDE0072D572 /* diagnostics.m */; };
 		21F4D70E21FC7A590070D5E0 /* patchfinder64.c in Sources */ = {isa = PBXBuildFile; fileRef = 21F4D70C21FC7A590070D5E0 /* patchfinder64.c */; settings = {COMPILER_FLAGS = "-Wno-unused-variable -Wno-unused-function"; }; };
 		21FED6AB2168F8060024BC95 /* SettingsTableViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 21C130E5214BDDE20021AA9D /* SettingsTableViewController.m */; settings = {COMPILER_FLAGS = "-Wno-unused-variable -Wno-unused-function"; }; };
 		21FF63CB224E5FDC008B76D9 /* offsetcache.c in Sources */ = {isa = PBXBuildFile; fileRef = 21FF63C9224E5FDC008B76D9 /* offsetcache.c */; };
@@ -156,6 +158,10 @@
 		21C13117214D268F0021AA9D /* multi_path_sploit.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = multi_path_sploit.c; sourceTree = "<group>"; };
 		21C13118214D268F0021AA9D /* multi_path_sploit.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = multi_path_sploit.h; sourceTree = "<group>"; };
 		21C1312E214D5A710021AA9D /* multi_path.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = multi_path.entitlements; sourceTree = "<group>"; };
+		21CC3901227CDFDE0072D572 /* prefs.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = prefs.h; sourceTree = "<group>"; };
+		21CC3902227CDFDE0072D572 /* prefs.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = prefs.m; sourceTree = "<group>"; };
+		21CC3903227CDFDE0072D572 /* diagnostics.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = diagnostics.m; sourceTree = "<group>"; };
+		21CC3904227CDFDE0072D572 /* diagnostics.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = diagnostics.h; sourceTree = "<group>"; };
 		21E9642421A1DD6F000625F7 /* NSTask.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = NSTask.h; sourceTree = "<group>"; };
 		21F4D70C21FC7A590070D5E0 /* patchfinder64.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = patchfinder64.c; path = patchfinder64/patchfinder64.c; sourceTree = SOURCE_ROOT; };
 		21F4D70D21FC7A590070D5E0 /* patchfinder64.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = patchfinder64.h; path = patchfinder64/patchfinder64.h; sourceTree = SOURCE_ROOT; };
@@ -404,6 +410,10 @@
 				22C546AA21A8A8FD00EFC09C /* utils.m */,
 				222AD59421FA732A00DCBA2A /* FakeApt.h */,
 				222AD59221FA731800DCBA2A /* FakeApt.m */,
+				21CC3901227CDFDE0072D572 /* prefs.h */,
+				21CC3902227CDFDE0072D572 /* prefs.m */,
+				21CC3904227CDFDE0072D572 /* diagnostics.h */,
+				21CC3903227CDFDE0072D572 /* diagnostics.m */,
 			);
 			path = source;
 			sourceTree = "<group>";
@@ -621,8 +631,10 @@
 				2199B8E9226B40C600A8255D /* kalloc_crash.c in Sources */,
 				21C1312F214E69F80021AA9D /* empty_list_sploit.c in Sources */,
 				21C0FC8721369EE900849420 /* KernelMemory.c in Sources */,
+				21CC3906227CDFDE0072D572 /* diagnostics.m in Sources */,
 				21C0FC7A21369EB800849420 /* main.m in Sources */,
 				212D8847216E4DF600A36DA5 /* early_kalloc.c in Sources */,
+				21CC3905227CDFDE0072D572 /* prefs.m in Sources */,
 				21A97FD02148103C00DC0023 /* remote_memory.c in Sources */,
 				222AD59321FA731800DCBA2A /* FakeApt.m in Sources */,
 				21FF63CB224E5FDC008B76D9 /* offsetcache.c in Sources */,
