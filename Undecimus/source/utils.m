@@ -1505,7 +1505,7 @@ void printOSDetails() {
     if (OSVersion == NULL) goto out;
     LOG("Machine Name: %s", machineName);
     LOG("Kernel Version: %s", kernelVersion);
-    LOG("System Version: iOS %s (Build: %s)", OSProductVersion, OSVersion);
+    LOG("System Version: iOS %s (%s) (Build: %s)", OSProductVersion, isBetaFirmware() ? "Beta" : "Stable", OSVersion);
 out:
     SafeFreeNULL(machineName);
     SafeFreeNULL(kernelVersion);
