@@ -118,6 +118,14 @@ void register_default_prefs() {
     [userDefaults registerDefaults:defaults];
 }
 
+void repair_prefs() {
+    prefs_t *prefs = copy_prefs();
+    if (!supportsExploit(prefs->exploit)) {
+        [userDefaults removeObjectForKey:@K_EXPLOIT];
+    }
+    release_prefs(&prefs);
+}
+
 void reset_prefs() {
     [userDefaults removePersistentDomainForName:[[NSBundle mainBundle] bundleIdentifier]];
 }

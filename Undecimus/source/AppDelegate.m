@@ -84,6 +84,7 @@
 
 
 - (void)initPrefs {
+    repair_prefs();
     register_default_prefs();
 }
 
