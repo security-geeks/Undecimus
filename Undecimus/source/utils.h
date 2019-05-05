@@ -156,6 +156,7 @@ char *getOSProductVersion(void);
 void printOSDetails(void);
 bool isBetaFirmware(void);
 double getUptime(void);
+vm_size_t get_kernel_page_size(void);
 
 extern NSData *lastSystemOutput;
 

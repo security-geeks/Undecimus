@@ -742,7 +742,7 @@ bool supportsExploit(exploit_t exploit) {
             break;
         }
         case voucher_swap_exploit: {
-            if (vm_kernel_page_size != 0x4000) {
+            if (get_kernel_page_size() != 0x4000) {
                 return false;
             }
             if (machineNameContains("iPad5,") &&
@@ -754,7 +754,7 @@ bool supportsExploit(exploit_t exploit) {
             break;
         }
         case mach_swap_exploit: {
-            if (vm_kernel_page_size != 0x1000 &&
+            if (get_kernel_page_size() != 0x1000 &&
                 !machineNameContains("iPad5,") &&
                 !machineNameContains("iPhone8,") &&
                 !machineNameContains("iPad6,")) {
@@ -1158,6 +1158,7 @@ void printOSDetails() {
     LOG("Machine Name: %s", machineName);
     LOG("Model Name: %s", modelName);
     LOG("Kernel Version: %s", kernelVersion);
+    LOG("Kernel Page Size: 0x%lx", get_kernel_page_size());
     LOG("System Version: iOS %s (%s) (Build: %s)", OSProductVersion, isBetaFirmware() ? "Beta" : "Stable", OSVersion);
 out:
     SafeFreeNULL(machineName);
@@ -1195,6 +1196,21 @@ out:
     SafeFreeNULL(size);
     SafeFreeNULL(boottime);
     return uptime;
+}
+
+vm_size_t get_kernel_page_size() {
+    vm_size_t kernel_page_size = 0;
+    vm_size_t *out_page_size = NULL;
+    host_t host = mach_host_self();
+    if (!MACH_PORT_VALID(host)) goto out;
+    out_page_size = (vm_size_t *)malloc(sizeof(vm_size_t));
+    if (out_page_size == NULL) goto out;
+    if (_host_page_size(host, out_page_size) != KERN_SUCCESS) goto out;
+    kernel_page_size = *out_page_size;
+out:
+    if (MACH_PORT_VALID(host)) mach_port_deallocate(mach_task_self(), host);
+    SafeFreeNULL(out_page_size);
+    return kernel_page_size;
 }
 
 __attribute__((constructor))

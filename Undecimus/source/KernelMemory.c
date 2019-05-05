@@ -241,8 +241,6 @@ uint64_t kmem_alloc_wired(uint64_t size)
     mach_vm_address_t addr = 0;
     mach_vm_size_t ksize = round_page_kernel(size);
 
-    LOG("vm_kernel_page_size: %lx", vm_kernel_page_size);
-
     err = mach_vm_allocate(tfp0, &addr, ksize + 0x4000, VM_FLAGS_ANYWHERE);
     if (err != KERN_SUCCESS) {
         LOG("unable to allocate kernel memory via tfp0: %s %x", mach_error_string(err), err);
