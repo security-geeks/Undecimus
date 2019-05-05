@@ -121,6 +121,8 @@ bool kernelVersionContains(const char *string);
 bool machineNameContains(const char *string);
 bool multi_path_tcp_enabled(void);
 bool jailbreakEnabled(void);
+NSString *getKernelBuildVersion(void);
+NSComparisonResult compareVersion(NSString *versionOne, NSString *versionTwo);
 bool supportsExploit(exploit_t exploit);
 bool jailbreakSupported(void);
 bool respringSupported(void);
