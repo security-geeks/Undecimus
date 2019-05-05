@@ -652,6 +652,9 @@ char *getKernelVersion() {
 char *getMachineName() {
     return sysctlWithName("hw.machine");
 }
+char *getModelName() {
+    return sysctlWithName("hw.model");
+}
 
 bool kernelVersionContains(const char *string) {
     char *kernelVersion = getKernelVersion();
@@ -1461,8 +1464,8 @@ char *sysctlWithName(const char *name) {
     char *ret = NULL;
     size_t *size = NULL;
     size = (size_t *)malloc(sizeof(size_t));
-    bzero(size, sizeof(size_t));
     if (size == NULL) goto out;
+    bzero(size, sizeof(size_t));
     if (sysctlbyname(name, NULL, size, NULL, 0) != ERR_SUCCESS) goto out;
     ret = (char *)malloc(*size);
     if (ret == NULL) goto out;
@@ -1485,11 +1488,14 @@ char *getOSProductVersion() {
 
 void printOSDetails() {
     char *machineName = NULL;
+    char *modelName = NULL;
     char *kernelVersion = NULL;
     char *OSProductVersion = NULL;
     char *OSVersion = NULL;
     machineName = getMachineName();
     if (machineName == NULL) goto out;
+    modelName = getModelName();
+    if (modelName == NULL) goto out;
     kernelVersion = getKernelVersion();
     if (kernelVersion == NULL) goto out;
     OSProductVersion = getOSProductVersion();
@@ -1497,10 +1503,12 @@ void printOSDetails() {
     OSVersion = getOSVersion();
     if (OSVersion == NULL) goto out;
     LOG("Machine Name: %s", machineName);
+    LOG("Model Name: %s", modelName);
     LOG("Kernel Version: %s", kernelVersion);
     LOG("System Version: iOS %s (%s) (Build: %s)", OSProductVersion, isBetaFirmware() ? "Beta" : "Stable", OSVersion);
 out:
     SafeFreeNULL(machineName);
+    SafeFreeNULL(modelName);
     SafeFreeNULL(kernelVersion);
     SafeFreeNULL(OSProductVersion);
     SafeFreeNULL(OSVersion);

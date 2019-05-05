@@ -116,6 +116,7 @@ NSString *pathForResource(NSString *resource);
 pid_t pidOfProcess(const char *name);
 char *getKernelVersion(void);
 char *getMachineName(void);
+char *getModelName(void);
 bool kernelVersionContains(const char *string);
 bool machineNameContains(const char *string);
 bool multi_path_tcp_enabled(void);
