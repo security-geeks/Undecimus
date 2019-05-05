@@ -650,14 +650,7 @@ char *getKernelVersion() {
 }
 
 char *getMachineName() {
-    char *ret = NULL;
-    struct utsname *uts = NULL;
-    uts = (struct utsname *)malloc(sizeof(struct utsname));
-    if (uts == NULL) return false;
-    bzero(uts, sizeof(struct utsname));
-    if (uname(uts) == ERR_SUCCESS) ret = strdup(uts->machine);
-    SafeFreeNULL(uts);
-    return ret;
+    return sysctlWithName("hw.machine");
 }
 
 bool kernelVersionContains(const char *string) {
