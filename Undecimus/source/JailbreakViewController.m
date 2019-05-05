@@ -717,13 +717,14 @@ void jailbreak()
                 fclose(decompressed_kernel_cache);
                 fclose(original_kernel_cache);
             }
-            struct utsname u = { 0 };
-            _assert(uname(&u) == ERR_SUCCESS, message, true);
+            char *kernelVersion = getKernelVersion();
+            _assert(kernelVersion != NULL, message, true);
             if (init_kernel(NULL, 0, decompressed_kernel_cache_path) != ERR_SUCCESS ||
-                find_strref(u.version, 1, string_base_const, true, false) == 0) {
+                find_strref(kernelVersion, 1, string_base_const, true, false) == 0) {
                 _assert(clean_file(decompressed_kernel_cache_path), message, true);
                 _assert(false, message, true);
             }
+            SafeFreeNULL(kernelVersion);
             LOG("Successfully initialized patchfinder64.");
         } else {
             auth_ptrs = GETOFFSET(auth_ptrs);
