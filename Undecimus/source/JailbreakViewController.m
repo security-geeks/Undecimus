@@ -567,17 +567,17 @@ void jailbreak()
     NSMutableString *status = [NSMutableString string];
     bool betaFirmware = isBetaFirmware();
     time_t start_time = time(NULL);
-#define INSERTSTATUS(x) do { \
-    [status appendString:x]; \
-} while (false)
+    UIProgressHUD *hud = addProgressHUD();
+#define INSERTSTATUS(x) do { [status appendString:x]; } while (false)
+#define PROGRESS(x) { LOG("Progress: %@", x); updateProgressHUD(hud, x); } while (false)
     
     UPSTAGE();
     
     {
-        // Exploit kernel_task.
+        // Exploit kernel.
         
-        LOG("Exploiting kernel_task...");
-        SETMESSAGE(NSLocalizedString(@"Failed to exploit kernel_task.", nil));
+        PROGRESS(NSLocalizedString(@"Exploiting kernel...", nil));
+        SETMESSAGE(NSLocalizedString(@"Failed to exploit kernel.", nil));
         bool exploit_success = false;
         mach_port_t persisted_kernel_task_port = MACH_PORT_NULL;
         struct task_dyld_info dyld_info = { 0 };
@@ -690,22 +690,22 @@ void jailbreak()
             exploit_success = false;
         }
         if (!exploit_success) {
-            NOTICE(NSLocalizedString(@"Failed to exploit kernel_task. This is not an error. Reboot and try again.", nil), true, false);
+            NOTICE(NSLocalizedString(@"Failed to exploit kernel. This is not an error. Reboot and try again.", nil), true, false);
             exit(EXIT_FAILURE);
             _assert(false, message, true);
         }
-        INSERTSTATUS(NSLocalizedString(@"Exploited kernel_task.\n", nil));
-        LOG("Successfully exploited kernel_task.");
+        INSERTSTATUS(NSLocalizedString(@"Exploited kernel.\n", nil));
+        LOG("Successfully exploited kernel.");
     }
     
     UPSTAGE();
     
     {
         if (!found_offsets) {
-            // Initialize patchfinder64.
+            // Initialize patchfinder.
             
-            LOG("Initializing patchfinder64...");
-            SETMESSAGE(NSLocalizedString(@"Failed to initialize patchfinder64.", nil));
+            PROGRESS(NSLocalizedString(@"Initializing patchfinder...", nil));
+            SETMESSAGE(NSLocalizedString(@"Failed to initialize patchfinder.", nil));
             const char *original_kernel_cache_path = "/System/Library/Caches/com.apple.kernelcaches/kernelcache";
             const char *decompressed_kernel_cache_path = [homeDirectory stringByAppendingPathComponent:@"Documents/kernelcache.dec"].UTF8String;
             if (!canRead(decompressed_kernel_cache_path)) {
@@ -725,7 +725,7 @@ void jailbreak()
                 _assert(false, message, true);
             }
             SafeFreeNULL(kernelVersion);
-            LOG("Successfully initialized patchfinder64.");
+            LOG("Successfully initialized patchfinder.");
         } else {
             auth_ptrs = GETOFFSET(auth_ptrs);
             monolithic_kernel = GETOFFSET(monolithic_kernel);
@@ -764,7 +764,7 @@ void jailbreak()
     if (!found_offsets) {
         // Find offsets.
         
-        LOG("Finding offsets...");
+        PROGRESS(NSLocalizedString(@"Finding offsets...", nil));
         SETOFFSET(kernel_base, kernel_base);
         SETOFFSET(kernel_slide, kernel_slide);
         FINDOFFSET(trustcache, NULL, true);
@@ -813,7 +813,7 @@ void jailbreak()
         found_offsets = true;
         LOG("Successfully found offsets.");
 
-        // Deinitialize patchfinder64.
+        // Deinitialize patchfinder.
         term_kernel();
     }
     
@@ -823,7 +823,7 @@ void jailbreak()
         // Initialize jailbreak.
         static uint64_t ShenanigansPatch = 0xca13feba37be;
         
-        LOG("Initializing jailbreak...");
+        PROGRESS(NSLocalizedString(@"Initializing jailbreak...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to initialize jailbreak.", nil));
         LOG("Escaping sandbox...");
         myProcAddr = get_proc_struct_for_pid(myPid);
@@ -867,14 +867,14 @@ void jailbreak()
     {
         if (prefs->export_kernel_task_port) {
             // Export kernel task port.
-            LOG("Exporting kernel task port...");
+            PROGRESS(NSLocalizedString(@"Exporting kernel task port...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to export kernel task port.", nil));
             export_tfp0(myOriginalHost);
             LOG("Successfully exported kernel task port.");
             INSERTSTATUS(NSLocalizedString(@"Exported kernel task port.\n", nil));
         } else {
             // Unexport kernel task port.
-            LOG("Unexporting kernel task port...");
+            PROGRESS(NSLocalizedString(@"Unexporting kernel task port...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to unexport kernel task port.", nil));
             unexport_tfp0(myOriginalHost);
             LOG("Successfully unexported kernel task port.");
@@ -887,7 +887,7 @@ void jailbreak()
     {
         // Write a test file to UserFS.
         
-        LOG("Writing a test file to UserFS...");
+        PROGRESS(NSLocalizedString(@"Writing a test file to UserFS...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to write a test file to UserFS.", nil));
         const char *testFile = [NSString stringWithFormat:@"/var/mobile/test-%lu.txt", time(NULL)].UTF8String;
         writeTestFile(testFile);
@@ -903,7 +903,7 @@ void jailbreak()
             if (![sha1sum(originalFile) isEqualToString:sha1sum(dumpFile)]) {
                 // Dump APTicket.
                 
-                LOG("Dumping APTicket...");
+                PROGRESS(NSLocalizedString(@"Dumping APTicket...", nil));
                 SETMESSAGE(NSLocalizedString(@"Failed to dump APTicket.", nil));
                 NSData *fileData = [NSData dataWithContentsOfFile:originalFile];
                 _assert(([fileData writeToFile:dumpFile atomically:YES]), message, true);
@@ -919,7 +919,7 @@ void jailbreak()
         if (prefs->overwrite_boot_nonce) {
             // Unlock nvram.
             
-            LOG("Unlocking nvram...");
+            PROGRESS(NSLocalizedString(@"Unlocking nvram...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to unlock nvram.", nil));
             _assert(unlocknvram() == ERR_SUCCESS, message, true);
             LOG("Successfully unlocked nvram.");
@@ -930,7 +930,7 @@ void jailbreak()
                 strstr(lastSystemOutput.bytes, prefs->boot_nonce) == NULL) {
                 // Set boot-nonce.
                 
-                LOG("Setting boot-nonce...");
+                PROGRESS(NSLocalizedString(@"Setting boot-nonce...", nil));
                 SETMESSAGE(NSLocalizedString(@"Failed to set boot-nonce.", nil));
                 _assert(runCommand("/usr/sbin/nvram", [NSString stringWithFormat:@"%s=%s", bootNonceKey, prefs->boot_nonce].UTF8String, NULL) == ERR_SUCCESS, message, true);
                 _assert(runCommand("/usr/sbin/nvram", [NSString stringWithFormat:@"%s=%s", kIONVRAMForceSyncNowPropertyKey, bootNonceKey].UTF8String, NULL) == ERR_SUCCESS, message, true);
@@ -940,7 +940,7 @@ void jailbreak()
             
             // Lock nvram.
             
-            LOG("Locking nvram...");
+            PROGRESS(NSLocalizedString(@"Locking nvram...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to lock nvram.", nil));
             _assert(locknvram() == ERR_SUCCESS, message, true);
             LOG("Successfully locked nvram.");
@@ -954,7 +954,7 @@ void jailbreak()
     {
         // Log slide.
         
-        LOG("Logging slide...");
+        PROGRESS(NSLocalizedString(@"Logging slide...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to log slide.", nil));
         NSString *file = @(SLIDE_FILE);
         NSData *fileData = [[NSString stringWithFormat:@(ADDR "\n"), kernel_slide] dataUsingEncoding:NSUTF8StringEncoding];
@@ -971,7 +971,7 @@ void jailbreak()
     {
         // Log ECID.
         
-        LOG("Logging ECID...");
+        PROGRESS(NSLocalizedString(@"Logging ECID...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to log ECID.", nil));
         NSString *ECID = getECID();
         if (ECID != nil) {
@@ -994,7 +994,7 @@ void jailbreak()
         if (prefs->disable_auto_updates) {
             // Disable Auto Updates.
             
-            LOG("Disabling Auto Updates...");
+            PROGRESS(NSLocalizedString(@"Disabling Auto Updates...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to disable auto updates.", nil));
             for (NSString *path in array) {
                 ensure_symlink("/dev/null", path.UTF8String);
@@ -1008,7 +1008,7 @@ void jailbreak()
         } else {
             // Enable Auto Updates.
             
-            LOG("Enabling Auto Updates...");
+            PROGRESS(NSLocalizedString(@"Enabling Auto Updates...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to enable auto updates.", nil));
             for (NSString *path in array) {
                 ensure_directory(path.UTF8String, 0, 0755);
@@ -1026,7 +1026,7 @@ void jailbreak()
     {
         // Remount RootFS.
         
-        LOG("Remounting RootFS...");
+        PROGRESS(NSLocalizedString(@"Remounting RootFS...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to remount RootFS.", nil));
         int rootfd = open("/", O_RDONLY);
         _assert(rootfd > 0, message, true);
@@ -1195,7 +1195,7 @@ void jailbreak()
     {
         // Write a test file to RootFS.
         
-        LOG("Writing a test file to RootFS...");
+        PROGRESS(NSLocalizedString(@"Writing a test file to RootFS...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to write a test file to RootFS.", nil));
         const char *testFile = [NSString stringWithFormat:@"/test-%lu.txt", time(NULL)].UTF8String;
         writeTestFile(testFile);
@@ -1210,7 +1210,7 @@ void jailbreak()
                                         @"/var/Keychains/ocspcache.sqlite3-wal"];
         if (prefs->disable_app_revokes && kCFCoreFoundationVersionNumber < kCFCoreFoundationVersionNumber_iOS_12_0) {
             // Disable app revokes.
-            LOG("Disabling app revokes...");
+            PROGRESS(NSLocalizedString(@"Disabling app revokes...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to disable app revokes.", nil));
             blockDomainWithName("ocsp.apple.com");
             for (NSString *path in array) {
@@ -1220,7 +1220,7 @@ void jailbreak()
             INSERTSTATUS(NSLocalizedString(@"Disabled App Revokes.\n", nil));
         } else {
             // Enable app revokes.
-            LOG("Enabling app revokes...");
+            PROGRESS(NSLocalizedString(@"Enabling app revokes...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to enable app revokes.", nil));
             unblockDomainWithName("ocsp.apple.com");
             for (NSString *path in array) {
@@ -1238,7 +1238,7 @@ void jailbreak()
     {
         // Create jailbreak directory.
         
-        LOG("Creating jailbreak directory...");
+        PROGRESS(NSLocalizedString(@"Creating jailbreak directory...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to create jailbreak directory.", nil));
         _assert(ensure_directory("/jb", 0, 0755), message, true);
         _assert(chdir("/jb") == ERR_SUCCESS, message, true);
@@ -1300,7 +1300,7 @@ void jailbreak()
         if (![[NSMutableDictionary dictionaryWithContentsOfFile:offsetsFile] isEqual:dictionary]) {
             // Cache offsets.
             
-            LOG("Caching offsets...");
+            PROGRESS(NSLocalizedString(@"Caching offsets...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to cache offsets.", nil));
             _assert(([dictionary writeToFile:offsetsFile atomically:YES]), message, true);
             _assert(init_file(offsetsFile.UTF8String, 0, 0644), message, true);
@@ -1313,13 +1313,11 @@ void jailbreak()
     
     {
         if (prefs->restore_rootfs) {
+            PROGRESS(NSLocalizedString(@"Restoring RootFS...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to Restore RootFS.", nil));
-            
-            // Rename system snapshot.
-            
-            LOG("Renaming system snapshot back...");
             NOTICE(NSLocalizedString(@"Will restore RootFS. This may take a while. Don't exit the app and don't let the device lock.", nil), 1, 1);
-            SETMESSAGE(NSLocalizedString(@"Unable to mount or rename system snapshot.  Delete OTA file from Settings - Storage if present", nil));
+            
+            LOG("Reverting back RootFS remount...");
             int rootfd = open("/", O_RDONLY);
             _assert(rootfd > 0, message, true);
             const char **snapshots = snapshot_list(rootfd);
@@ -1355,7 +1353,7 @@ void jailbreak()
             SafeFreeNULL(snapshots);
             _assert(runCommand("/usr/bin/uicache", NULL) == ERR_SUCCESS, message, true);
             _assert(clean_file("/usr/bin/uicache"), message, true);
-            LOG("Successfully renamed system snapshot back.");
+            LOG("Successfully reverted back RootFS remount.");
             
             // Clean up.
             
@@ -1399,7 +1397,6 @@ void jailbreak()
             LOG("Rebooting...");
             SETMESSAGE(NSLocalizedString(@"Failed to reboot.", nil));
             NOTICE(NSLocalizedString(@"RootFS has been successfully restored. The device will now be restarted.", nil), true, false);
-            LOG("I don't feel so good...");
             _assert(reboot(RB_QUICK) == ERR_SUCCESS, message, true);
             _assert(false, message, true);
             LOG("Successfully rebooted.");
@@ -1411,7 +1408,7 @@ void jailbreak()
     {
         // Allow SpringBoard to show non-default system apps.
         
-        LOG("Allowing SpringBoard to show non-default system apps...");
+        PROGRESS(NSLocalizedString(@"Allowing SpringBoard to show non-default system apps...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to allow SpringBoard to show non-default system apps.", nil));
         _assert(modifyPlist(@"/var/mobile/Library/Preferences/com.apple.springboard.plist", ^(id plist) {
             plist[@"SBShowNonDefaultSystemApps"] = @YES;
@@ -1423,7 +1420,7 @@ void jailbreak()
     UPSTAGE();
     
     if (prefs->ssh_only && needStrap) {
-        LOG("Enabling SSH...");
+        PROGRESS(NSLocalizedString(@"Enabling SSH...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to enable SSH.", nil));
         NSMutableArray *toInject = [NSMutableArray new];
         if (!verifySums(pathForResource(@"binpack64-256.md5sums"), HASHTYPE_MD5)) {
@@ -1528,10 +1525,10 @@ void jailbreak()
     UPSTAGE();
     
     {
-        // Copy over our resources to RootFS.
+        // Copy over resources to RootFS.
         
-        LOG("Copying over our resources to RootFS...");
-        SETMESSAGE(NSLocalizedString(@"Failed to copy over our resources to RootFS.", nil));
+        PROGRESS(NSLocalizedString(@"Copying over resources to RootFS...", nil));
+        SETMESSAGE(NSLocalizedString(@"Failed to copy over resources to RootFS.", nil));
         
         _assert(chdir("/") == ERR_SUCCESS, message, true);
         
@@ -1606,8 +1603,8 @@ void jailbreak()
         clean_file("/jb/amfid_payload.dylib");
         clean_file("/jb/libjailbreak.dylib");
         
-        LOG("Successfully copied over our resources to RootFS.");
-        INSERTSTATUS(NSLocalizedString(@"Copied over our resources to RootFS.\n", nil));
+        LOG("Successfully copied over resources to RootFS.");
+        INSERTSTATUS(NSLocalizedString(@"Copied over resources to RootFS.\n", nil));
     }
     
     UPSTAGE();
@@ -1615,7 +1612,7 @@ void jailbreak()
     {
         // Inject trust cache
         
-        LOG("Injecting trust cache...");
+        PROGRESS(NSLocalizedString(@"Injecting trust cache...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to inject trust cache.", nil));
         NSArray *resources = [NSArray arrayWithContentsOfFile:@"/usr/share/jailbreak/injectme.plist"];
         // If substrate is already running but was broken, skip injecting again
@@ -1640,7 +1637,7 @@ void jailbreak()
     {
         // Repair filesystem.
         
-        LOG("Repairing filesystem...");
+        PROGRESS(NSLocalizedString(@"Repairing filesystem...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to repair filesystem.", nil));
         
         _assert(ensure_directory("/var/lib", 0, 0755), message, true);
@@ -1686,7 +1683,7 @@ void jailbreak()
         // Load Substrate
         
         // Set Disable Loader.
-        LOG("Setting Disable Loader...");
+        PROGRESS(NSLocalizedString(@"Setting Disable Loader...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to set Disable Loader.", nil));
         if (prefs->load_tweaks) {
             clean_file("/var/tmp/.substrated_disable_loader");
@@ -1696,7 +1693,7 @@ void jailbreak()
         LOG("Successfully set Disable Loader.");
 
         // Run substrate
-        LOG("Starting Substrate...");
+        PROGRESS(NSLocalizedString(@"Starting Substrate...", nil));
         SETMESSAGE(NSLocalizedString(skipSubstrate?@"Failed to restart Substrate":@"Failed to start Substrate.", nil));
         if (access("/usr/lib/substrate", F_OK) == ERR_SUCCESS && !is_symlink("/usr/lib/substrate")) {
             _assert(clean_file("/Library/substrate"), message, true);
@@ -1713,7 +1710,7 @@ void jailbreak()
     
     {
         // Extract bootstrap.
-        LOG("Extracting bootstrap...");
+        PROGRESS(NSLocalizedString(@"Extracting bootstrap...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to extract bootstrap.", nil));
 
         if (pkgIsBy("CoolStar", "lzma")) {
@@ -1866,7 +1863,7 @@ void jailbreak()
     {
         // Disable stashing.
         
-        LOG("Disabling stashing...");
+        PROGRESS(NSLocalizedString(@"Disabling stashing...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to disable stashing.", nil));
         _assert(ensure_file("/.cydia_no_stash", 0, 0644), message, true);
         LOG("Successfully disabled stashing.");
@@ -1878,7 +1875,7 @@ void jailbreak()
     {
         // Fix storage preferences.
         
-        LOG("Fixing storage preferences...");
+        PROGRESS(NSLocalizedString(@"Fixing storage preferences...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to fix storage preferences.", nil));
         if (access("/System/Library/PrivateFrameworks/MobileSoftwareUpdate.framework/softwareupdated", F_OK) == ERR_SUCCESS) {
             _assert(rename("/System/Library/PrivateFrameworks/MobileSoftwareUpdate.framework/softwareupdated", "/System/Library/PrivateFrameworks/MobileSoftwareUpdate.framework/Support/softwareupdated") == ERR_SUCCESS, message, false);
@@ -1913,7 +1910,7 @@ void jailbreak()
         if (prefs->increase_memory_limit) {
             // Increase memory limit.
             
-            LOG("Increasing memory limit...");
+            PROGRESS(NSLocalizedString(@"Increasing memory limit...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to increase memory limit.", nil));
             _assert(modifyPlist(jetsamFile, ^(id plist) {
                 plist[@"Version4"][@"System"][@"Override"][@"Global"][@"UserHighWaterMark"] = [NSNumber numberWithInteger:[plist[@"Version4"][@"PListDevice"][@"MemoryCapacity"] integerValue]];
@@ -1923,7 +1920,7 @@ void jailbreak()
         } else {
             // Restore memory limit.
             
-            LOG("Restoring memory limit...");
+            PROGRESS(NSLocalizedString(@"Restoring memory limit...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to restore memory limit.", nil));
             _assert(modifyPlist(jetsamFile, ^(id plist) {
                 plist[@"Version4"][@"System"][@"Override"][@"Global"][@"UserHighWaterMark"] = nil;
@@ -1938,17 +1935,12 @@ void jailbreak()
     {
         if (prefs->install_openssh) {
             // Install OpenSSH.
-            LOG("Installing OpenSSH...");
+            PROGRESS(NSLocalizedString(@"Installing OpenSSH...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to install OpenSSH.", nil));
             _assert(aptInstall(@[@"openssh"]), message, true);
-            LOG("Successfully installed OpenSSH.");
-            
-            // Disable Install OpenSSH.
-            LOG("Disabling Install OpenSSH...");
-            SETMESSAGE(NSLocalizedString(@"Failed to disable Install OpenSSH.", nil));
             prefs->install_openssh = false;
             _assert(set_prefs(prefs), message, true);
-            LOG("Successfully disabled Install OpenSSH.");
+            LOG("Successfully installed OpenSSH.");
             
             INSERTSTATUS(NSLocalizedString(@"Installed OpenSSH.\n", nil));
         }
@@ -1959,7 +1951,7 @@ void jailbreak()
     {
         if (pkgIsInstalled("cydia-gui")) {
             // Remove Electra's Cydia.
-            LOG("Removing Electra's Cydia...");
+            PROGRESS(NSLocalizedString(@"Removing Electra's Cydia...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to remove Electra's Cydia.", nil));
             _assert(removePkg("cydia-gui", true), message, true);
             prefs->install_cydia = true;
@@ -1971,7 +1963,7 @@ void jailbreak()
         }
         if (access("/etc/apt/sources.list.d/sileo.sources", F_OK) == ERR_SUCCESS) {
             // Remove Electra's Sileo - it has trigger loops and incompatible depends
-            LOG("Removing Incompatible Sileo...");
+            PROGRESS(NSLocalizedString(@"Removing Incompatible Sileo...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to remove incompatible Sileo.", nil));
 
             if (pkgIsInstalled("org.coolstar.sileo")) {
@@ -1985,7 +1977,7 @@ void jailbreak()
         }
         if (pkgIsInstalled("cydia-upgrade-helper")) {
             // Remove Electra's Cydia Upgrade Helper.
-            LOG("Removing Electra's Cydia Upgrade Helper...");
+            PROGRESS(NSLocalizedString(@"Removing Electra's Cydia Upgrade Helper...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to remove Electra's Cydia Upgrade Helper.", nil));
             _assert(removePkg("cydia-upgrade-helper", true), message, true);
             prefs->install_cydia = true;
@@ -2004,20 +1996,15 @@ void jailbreak()
         if (prefs->install_cydia) {
             // Install Cydia.
             
-            LOG("Installing Cydia...");
+            PROGRESS(NSLocalizedString(@"Installing Cydia...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to install Cydia.", nil));
             NSString *cydiaVer = versionOfPkg(@"cydia");
             _assert(cydiaVer!=nil, message, true);
             _assert(aptInstall(@[@"--reinstall", [@"cydia" stringByAppendingFormat:@"=%@", cydiaVer]]), message, true);
-            LOG("Successfully installed Cydia.");
-            
-            // Disable Install Cydia.
-            LOG("Disabling Install Cydia...");
-            SETMESSAGE(NSLocalizedString(@"Failed to disable Install Cydia.", nil));
             prefs->install_cydia = false;
             prefs->run_uicache = true;
             _assert(set_prefs(prefs), message, true);
-            LOG("Successfully disabled Install Cydia.");
+            LOG("Successfully installed Cydia.");
             
             INSERTSTATUS(NSLocalizedString(@"Installed Cydia.\n", nil));
         }
@@ -2029,7 +2016,7 @@ void jailbreak()
         if (prefs->load_daemons) {
             // Load Daemons.
             
-            LOG("Loading Daemons...");
+            PROGRESS(NSLocalizedString(@"Loading Daemons...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to load Daemons.", nil));
             system("echo 'really jailbroken';"
                     "shopt -s nullglob;"
@@ -2055,7 +2042,7 @@ void jailbreak()
         if (prefs->reset_cydia_cache) {
             // Reset Cydia cache.
             
-            LOG("Resetting Cydia cache...");
+            PROGRESS(NSLocalizedString(@"Resetting Cydia cache...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to reset Cydia cache.", nil));
             _assert(clean_file("/var/mobile/Library/Cydia"), message, true);
             _assert(clean_file("/var/mobile/Library/Caches/com.saurik.Cydia"), message, true);
@@ -2073,7 +2060,7 @@ void jailbreak()
         if (prefs->run_uicache || !canOpen("cydia://")) {
             // Run uicache.
             
-            LOG("Running uicache...");
+            PROGRESS(NSLocalizedString(@"Refreshing icon cache...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to run uicache.", nil));
             _assert(runCommand("/usr/bin/uicache", NULL) == ERR_SUCCESS, message, true);
             prefs->run_uicache = false;
@@ -2089,7 +2076,7 @@ void jailbreak()
         if (!(prefs->load_tweaks && prefs->reload_system_daemons)) {
             // Flush preference cache.
             
-            LOG("Flushing preference cache...");
+            PROGRESS(NSLocalizedString(@"Flushing preference cache...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to flush preference cache.", nil));
             _assert(runCommand("/bin/launchctl", "stop", "com.apple.cfprefsd.xpc.daemon", NULL) == ERR_SUCCESS, message, true);
             LOG("Successfully flushed preference cache.");
@@ -2103,7 +2090,7 @@ void jailbreak()
         if (prefs->load_tweaks) {
             // Load Tweaks.
             
-            LOG("Loading Tweaks...");
+            PROGRESS(NSLocalizedString(@"Loading Tweaks...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to load tweaks.", nil));
             if (prefs->reload_system_daemons) {
                 rv = system("nohup bash -c \""
@@ -2126,6 +2113,7 @@ void jailbreak()
         }
     }
 out:
+    PROGRESS(NSLocalizedString(@"Deinitializing jailbreak...", nil));
     LOG("Deinitializing kexecute...");
     term_kexecute();
     LOG("Unplatformizing...");
@@ -2144,6 +2132,8 @@ out:
     myHost = HOST_NULL;
     _assert(mach_port_deallocate(mach_task_self(), myOriginalHost) == KERN_SUCCESS, message, true);
     myOriginalHost = HOST_NULL;
+#undef PROGRESS
+    removeProgressHUD(hud);
     INSERTSTATUS(([NSString stringWithFormat:@"\nRead %zu bytes from kernel memory\nWrote %zu bytes to kernel memory\n", kreads, kwrites]));
     INSERTSTATUS(([NSString stringWithFormat:@"\nJailbroke in %ld seconds\n", time(NULL) - start_time]));
     STATUS(NSLocalizedString(@"Jailbroken", nil), false, false);
