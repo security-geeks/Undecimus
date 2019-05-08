@@ -712,12 +712,13 @@ bool jailbreakEnabled() {
 
 NSString *getKernelBuildVersion() {
     NSString *kernelBuild = nil;
-    char *kernelVersion = getKernelVersion();
+    NSString *cleanString = nil;
+    char *kernelVersion = NULL;
+    kernelVersion = getKernelVersion();
     if (kernelVersion == NULL) return nil;
-    NSArray *components = [[NSString stringWithUTF8String:kernelVersion] componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    cleanString = [NSString stringWithUTF8String:kernelVersion];
     SafeFreeNULL(kernelVersion);
-    NSString *lastComponent = [components lastObject];
-    NSString *cleanString = [lastComponent copy];
+    cleanString = [[cleanString componentsSeparatedByString:@"; "] objectAtIndex:1];
     cleanString = [[cleanString componentsSeparatedByString:@"-"] objectAtIndex:1];
     cleanString = [[cleanString componentsSeparatedByString:@"/"] objectAtIndex:0];
     kernelBuild = [cleanString copy];
@@ -1205,10 +1206,11 @@ vm_size_t get_kernel_page_size() {
     if (!MACH_PORT_VALID(host)) goto out;
     out_page_size = (vm_size_t *)malloc(sizeof(vm_size_t));
     if (out_page_size == NULL) goto out;
+    bzero(out_page_size, sizeof(vm_size_t));
     if (_host_page_size(host, out_page_size) != KERN_SUCCESS) goto out;
     kernel_page_size = *out_page_size;
 out:
-    if (MACH_PORT_VALID(host)) mach_port_deallocate(mach_task_self(), host);
+    if (MACH_PORT_VALID(host)) mach_port_deallocate(mach_task_self(), host); host = HOST_NULL;
     SafeFreeNULL(out_page_size);
     return kernel_page_size;
 }
