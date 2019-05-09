@@ -1,6 +1,5 @@
-#include <inttypes.h>
+#include <common.h>
 #include <mach/mach.h>
-#include <stdbool.h>
 
 bool init_kexecute(void);
 void term_kexecute(void);

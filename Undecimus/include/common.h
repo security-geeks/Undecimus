@@ -23,6 +23,8 @@ extern void NSLog(CFStringRef, ...);
 #define kCFCoreFoundationVersionNumber_iOS_11_3 1452.23
 #define kCFCoreFoundationVersionNumber_iOS_11_0 1443.00
 
+#define auto __auto_type
+
 extern uint64_t offset_options;
 #define OPT(x) (offset_options?((rk64(offset_options) & OPT_ ##x)?true:false):false)
 #define SETOPT(x) (offset_options?wk64(offset_options, rk64(offset_options) | OPT_ ##x):0)
@@ -35,8 +37,10 @@ extern uint64_t offset_options;
 #define MACH_LC_SEGMENT      LC_SEGMENT_64
 typedef struct mach_header_64 mach_hdr_t;
 typedef struct segment_command_64 mach_seg_t;
-typedef uint64_t kptr_t;
 typedef struct load_command mach_lc_t;
+typedef uint64_t kptr_t;
+#define KPTR_NULL ((kptr_t) 0)
+#define KERN_POINTER_VALID(val) ((val) >= 0xffff000000000000 && (val) != 0xffffffffffffffff)
 
 #endif
 

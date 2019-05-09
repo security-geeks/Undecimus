@@ -39,7 +39,6 @@ TODO:
 #define SETOFFSET(offset, val) set_offset(#offset, val)
 #define GETOFFSET(offset) get_offset(#offset)
 
-#define KERN_POINTER_VALID(val) ((val) >= 0xffff000000000000 && (val) != 0xffffffffffffffff)
 #define SIZEOF_STRUCT_EXTENSION 0x60
 
 #define OSBoolTrue getOSBool(true)

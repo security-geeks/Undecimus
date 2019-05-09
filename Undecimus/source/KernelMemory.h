@@ -3,6 +3,7 @@
 
 #include <mach/mach.h>
 #include <stdbool.h>
+#include <common.h>
 
 /***** mach_vm.h *****/
 kern_return_t mach_vm_read(

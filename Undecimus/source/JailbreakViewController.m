@@ -95,7 +95,7 @@ extern int maxStage;
         SETOFFSET(x, find_symbol(symbol != NULL ? symbol : "_" #x)); \
     } \
     if (!KERN_POINTER_VALID(GETOFFSET(x))) { \
-        uint64_t (*_find_ ##x)(void) = dlsym(RTLD_DEFAULT, "find_" #x); \
+        kptr_t (*_find_ ##x)(void) = dlsym(RTLD_DEFAULT, "find_" #x); \
         if (_find_ ##x != NULL) { \
             SETOFFSET(x, _find_ ##x()); \
         } \
@@ -123,33 +123,27 @@ static void writeTestFile(const char *file) {
     _assert(clean_file(file), message, true);
 }
 
-uint64_t
-find_gadget_candidate(
-                      char** alternatives,
-                      size_t gadget_length)
-{
-    void* haystack_start = (void*)atoi;    // will do...
-    size_t haystack_size = 100*1024*1024; // likewise...
+uint64_t find_gadget_candidate(char **alternatives, size_t gadget_length) {
+    auto const haystack_start = (void *)atoi; // will do...
+    auto haystack_size = 100*1024*1024; // likewise...
     
-    for (char* candidate = *alternatives; candidate != NULL; alternatives++) {
-        void* found_at = memmem(haystack_start, haystack_size, candidate, gadget_length);
+    for (char *candidate = *alternatives; candidate != NULL; alternatives++) {
+        void *found_at = memmem(haystack_start, haystack_size, candidate, gadget_length);
         if (found_at != NULL){
             LOG("found at: %llx", (uint64_t)found_at);
             return (uint64_t)found_at;
         }
     }
-    
     return 0;
 }
 
 uint64_t blr_x19_addr = 0;
-uint64_t
-find_blr_x19_gadget()
+uint64_t find_blr_x19_gadget()
 {
     if (blr_x19_addr != 0){
         return blr_x19_addr;
     }
-    char* blr_x19 = "\x60\x02\x3f\xd6";
+    auto const blr_x19 = "\x60\x02\x3f\xd6";
     char* candidates[] = {blr_x19, NULL};
     blr_x19_addr = find_gadget_candidate(candidates, 4);
     return blr_x19_addr;
@@ -159,9 +153,9 @@ uint32_t IO_BITS_ACTIVE = 0x80000000;
 uint32_t IKOT_TASK = 2;
 uint32_t IKOT_NONE = 0;
 
-void convert_port_to_task_port(mach_port_t port, uint64_t space, uint64_t task_kaddr) {
+void convert_port_to_task_port(mach_port_t port, kptr_t space, kptr_t task_kaddr) {
     // now make the changes to the port object to make it a task port:
-    uint64_t port_kaddr = get_address_of_port(getpid(), port);
+    auto const port_kaddr = get_address_of_port(getpid(), port);
     
     WriteKernel32(port_kaddr + koffset(KSTRUCT_OFFSET_IPC_PORT_IO_BITS), IO_BITS_ACTIVE | IKOT_TASK);
     WriteKernel32(port_kaddr + koffset(KSTRUCT_OFFSET_IPC_PORT_IO_REFERENCES), 0xf00d);
@@ -170,14 +164,14 @@ void convert_port_to_task_port(mach_port_t port, uint64_t space, uint64_t task_k
     WriteKernel64(port_kaddr + koffset(KSTRUCT_OFFSET_IPC_PORT_IP_KOBJECT),  task_kaddr);
     
     // swap our receive right for a send right:
-    uint64_t task_port_addr = task_self_addr();
-    uint64_t task_addr = ReadKernel64(task_port_addr + koffset(KSTRUCT_OFFSET_IPC_PORT_IP_KOBJECT));
-    uint64_t itk_space = ReadKernel64(task_addr + koffset(KSTRUCT_OFFSET_TASK_ITK_SPACE));
-    uint64_t is_table = ReadKernel64(itk_space + koffset(KSTRUCT_OFFSET_IPC_SPACE_IS_TABLE));
+    auto const task_port_addr = task_self_addr();
+    auto const task_addr = ReadKernel64(task_port_addr + koffset(KSTRUCT_OFFSET_IPC_PORT_IP_KOBJECT));
+    auto const itk_space = ReadKernel64(task_addr + koffset(KSTRUCT_OFFSET_TASK_ITK_SPACE));
+    auto const is_table = ReadKernel64(itk_space + koffset(KSTRUCT_OFFSET_IPC_SPACE_IS_TABLE));
     
-    uint32_t port_index = port >> 8;
-    const int sizeof_ipc_entry_t = 0x18;
-    uint32_t bits = ReadKernel32(is_table + (port_index * sizeof_ipc_entry_t) + 8); // 8 = offset of ie_bits in struct ipc_entry
+    auto const port_index = port >> 8;
+    auto const sizeof_ipc_entry_t = 0x18;
+    auto bits = ReadKernel32(is_table + (port_index * sizeof_ipc_entry_t) + 8); // 8 = offset of ie_bits in struct ipc_entry
     
 #define IE_BITS_SEND (1<<16)
 #define IE_BITS_RECEIVE (1<<17)
@@ -188,34 +182,33 @@ void convert_port_to_task_port(mach_port_t port, uint64_t space, uint64_t task_k
     WriteKernel32(is_table + (port_index * sizeof_ipc_entry_t) + 8, bits);
 }
 
-void make_port_fake_task_port(mach_port_t port, uint64_t task_kaddr) {
+void make_port_fake_task_port(mach_port_t port, kptr_t task_kaddr) {
     convert_port_to_task_port(port, ipc_space_kernel(), task_kaddr);
 }
 
-uint64_t make_fake_task(uint64_t vm_map) {
-    uint64_t fake_task_kaddr = kmem_alloc(0x1000);
-    
-    void* fake_task = malloc(0x1000);
-    memset(fake_task, 0, 0x1000);
+kptr_t make_fake_task(kptr_t vm_map) {
+    auto const fake_task_kaddr = kmem_alloc(0x1000);
+    auto const fake_task_size = 0x1000;
+    auto fake_task = malloc(fake_task_size);
+    memset(fake_task, 0, fake_task_size);
     *(uint32_t*)(fake_task + koffset(KSTRUCT_OFFSET_TASK_REF_COUNT)) = 0xd00d; // leak references
     *(uint32_t*)(fake_task + koffset(KSTRUCT_OFFSET_TASK_ACTIVE)) = 1;
     *(uint64_t*)(fake_task + koffset(KSTRUCT_OFFSET_TASK_VM_MAP)) = vm_map;
     *(uint8_t*)(fake_task + koffset(KSTRUCT_OFFSET_TASK_LCK_MTX_TYPE)) = 0x22;
-    kmemcpy(fake_task_kaddr, (uint64_t) fake_task, 0x1000);
+    kwrite(fake_task_kaddr, fake_task, fake_task_size);
     SafeFreeNULL(fake_task);
-    
     return fake_task_kaddr;
 }
 
-void set_all_image_info_addr(uint64_t kernel_task_kaddr) {
+void set_all_image_info_addr(kptr_t kernel_task_kaddr) {
     struct task_dyld_info dyld_info = { 0 };
     mach_msg_type_number_t count = TASK_DYLD_INFO_COUNT;
     _assert(task_info(tfp0, TASK_DYLD_INFO, (task_info_t)&dyld_info, &count) == KERN_SUCCESS, message, true);
     LOG("Will save offsets to all_image_info_addr");
     SETOFFSET(kernel_task_offset_all_image_info_addr, koffset(KSTRUCT_OFFSET_TASK_ALL_IMAGE_INFO_ADDR));
     if (dyld_info.all_image_info_addr && dyld_info.all_image_info_addr != kernel_base && dyld_info.all_image_info_addr > kernel_base) {
-        size_t blob_size = rk64(dyld_info.all_image_info_addr);
-        struct cache_blob *blob = create_cache_blob(blob_size);
+        auto const blob_size = rk32(dyld_info.all_image_info_addr + offsetof(struct cache_blob, size));
+        auto blob = create_cache_blob(blob_size);
         _assert(rkbuffer(dyld_info.all_image_info_addr, blob, blob_size), message, true);
         // Adds any entries that are in kernel but we don't have
         merge_cache_blob(blob);
@@ -228,8 +221,8 @@ void set_all_image_info_addr(uint64_t kernel_task_kaddr) {
     size_t cache_size = export_cache_blob(&cache);
     _assert(cache_size > sizeof(struct cache_blob), message, true);
     LOG("Setting all_image_info_addr...");
-    uint64_t kernel_cache_blob = kmem_alloc_wired(cache_size);
-    blob_rebase(cache, (uint64_t)cache, kernel_cache_blob);
+    kptr_t kernel_cache_blob = kmem_alloc_wired(cache_size);
+    blob_rebase(cache, (kptr_t)cache, kernel_cache_blob);
     wkbuffer(kernel_cache_blob, cache, cache_size);
     SafeFreeNULL(cache);
     WriteKernel64(kernel_task_kaddr + koffset(KSTRUCT_OFFSET_TASK_ALL_IMAGE_INFO_ADDR), kernel_cache_blob);
@@ -237,7 +230,7 @@ void set_all_image_info_addr(uint64_t kernel_task_kaddr) {
     _assert(dyld_info.all_image_info_addr == kernel_cache_blob, message, true);
 }
 
-void set_all_image_info_size(uint64_t kernel_task_kaddr, uint64_t all_image_info_size) {
+void set_all_image_info_size(kptr_t kernel_task_kaddr, uint64_t all_image_info_size) {
     struct task_dyld_info dyld_info = { 0 };
     mach_msg_type_number_t count = TASK_DYLD_INFO_COUNT;
     _assert(task_info(tfp0, TASK_DYLD_INFO, (task_info_t)&dyld_info, &count) == KERN_SUCCESS, message, true);
@@ -286,56 +279,50 @@ void remap_tfp0_set_hsp4(mach_port_t *port) {
     
     // and we can write our port to realhost.special[4]
     
-    host_t host = mach_host_self();
+    auto host = mach_host_self();
     _assert(MACH_PORT_VALID(host), message, true);
-    uint64_t remapped_task_addr = 0;
+    auto remapped_task_addr = KPTR_NULL;
     // task is smaller than this but it works so meh
-    uint64_t sizeof_task = 0x1000;
-    uint64_t kernel_task_kaddr = ReadKernel64(GETOFFSET(kernel_task));
-    _assert(kernel_task_kaddr != 0, message, true);
+    auto const sizeof_task = 0x1000;
+    auto const kernel_task_kaddr = ReadKernel64(GETOFFSET(kernel_task));
+    _assert(KERN_POINTER_VALID(kernel_task_kaddr), message, true);
     LOG("kernel_task_kaddr = " ADDR, kernel_task_kaddr);
-    mach_port_t zm_fake_task_port = MACH_PORT_NULL;
-    mach_port_t km_fake_task_port = MACH_PORT_NULL;
-    kern_return_t kr = mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &zm_fake_task_port);
-    kr = kr || mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &km_fake_task_port);
-    if (kr == KERN_SUCCESS && *port == MACH_PORT_NULL) {
+    auto zm_fake_task_port = TASK_NULL;
+    auto km_fake_task_port = TASK_NULL;
+    auto ret = mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &zm_fake_task_port);
+    ret = ret || mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &km_fake_task_port);
+    if (ret == KERN_SUCCESS && *port == MACH_PORT_NULL) {
         _assert(mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, port) == KERN_SUCCESS, message, true);
     }
-    // strref \"Nothing being freed to the zone_map. start = end = %p\\n\"
-    // or traditional \"zone_init: kmem_suballoc failed\"
-    uint64_t zone_map_kptr = GETOFFSET(zone_map_ref);
-    uint64_t zone_map = ReadKernel64(zone_map_kptr);
-    // kernel_task->vm_map == kernel_map
-    uint64_t kernel_map = ReadKernel64(kernel_task_kaddr + koffset(KSTRUCT_OFFSET_TASK_VM_MAP));
-    uint64_t zm_fake_task_kptr = make_fake_task(zone_map);
-    uint64_t km_fake_task_kptr = make_fake_task(kernel_map);
+    auto const zone_map_kptr = GETOFFSET(zone_map_ref);
+    auto const zone_map = ReadKernel64(zone_map_kptr);
+    auto const kernel_map = ReadKernel64(kernel_task_kaddr + koffset(KSTRUCT_OFFSET_TASK_VM_MAP));
+    auto const zm_fake_task_kptr = make_fake_task(zone_map);
+    auto const km_fake_task_kptr = make_fake_task(kernel_map);
     make_port_fake_task_port(zm_fake_task_port, zm_fake_task_kptr);
     make_port_fake_task_port(km_fake_task_port, km_fake_task_kptr);
     km_fake_task_port = zm_fake_task_port;
-    vm_prot_t cur = 0;
-    vm_prot_t max = 0;
+    auto cur = VM_PROT_NONE, max = VM_PROT_NONE;
     _assert(mach_vm_remap(km_fake_task_port, &remapped_task_addr, sizeof_task, 0, VM_FLAGS_ANYWHERE | VM_FLAGS_RETURN_DATA_ADDR, zm_fake_task_port, kernel_task_kaddr, 0, &cur, &max, VM_INHERIT_NONE) == KERN_SUCCESS, message, true);
     _assert(kernel_task_kaddr != remapped_task_addr, message, true);
     LOG("remapped_task_addr = " ADDR, remapped_task_addr);
     _assert(mach_vm_wire(host, km_fake_task_port, remapped_task_addr, sizeof_task, VM_PROT_READ | VM_PROT_WRITE) == KERN_SUCCESS, message, true);
-    uint64_t port_kaddr = get_address_of_port(getpid(), *port);
+    auto const port_kaddr = get_address_of_port(getpid(), *port);
     LOG("port_kaddr = " ADDR, port_kaddr);
     make_port_fake_task_port(*port, remapped_task_addr);
     _assert(ReadKernel64(port_kaddr + koffset(KSTRUCT_OFFSET_IPC_PORT_IP_KOBJECT)) == remapped_task_addr, message, true);
-    // lck_mtx -- arm: 8  arm64: 16
-    uint64_t host_priv_kaddr = get_address_of_port(getpid(), host);
-    uint64_t realhost_kaddr = ReadKernel64(host_priv_kaddr + koffset(KSTRUCT_OFFSET_IPC_PORT_IP_KOBJECT));
-    WriteKernel64(realhost_kaddr + koffset(KSTRUCT_OFFSET_HOST_SPECIAL) + 4 * sizeof(void *), port_kaddr);
+    auto const host_priv_kaddr = get_address_of_port(getpid(), host);
+    auto const realhost_kaddr = ReadKernel64(host_priv_kaddr + koffset(KSTRUCT_OFFSET_IPC_PORT_IP_KOBJECT));
+    WriteKernel64(realhost_kaddr + koffset(KSTRUCT_OFFSET_HOST_SPECIAL) + 4 * sizeof(kptr_t), port_kaddr);
     set_all_image_info_addr(kernel_task_kaddr);
     set_all_image_info_size(kernel_task_kaddr, kernel_slide);
     mach_port_deallocate(mach_task_self(), host);
 }
 
 void blockDomainWithName(const char *name) {
-    NSString *hostsFile = nil;
-    NSString *newLine = nil;
-    NSString *newHostsFile = nil;
-    SETMESSAGE(NSLocalizedString(@"Failed to block domain with name.", nil));
+    id hostsFile = nil;
+    id newLine = nil;
+    id newHostsFile = nil;
     hostsFile = [NSString stringWithContentsOfFile:@"/etc/hosts" encoding:NSUTF8StringEncoding error:nil];
     newHostsFile = hostsFile;
     newLine = [NSString stringWithFormat:@"\n127.0.0.1 %s\n", name];
@@ -352,10 +339,9 @@ void blockDomainWithName(const char *name) {
 }
 
 void unblockDomainWithName(const char *name) {
-    NSString *hostsFile = nil;
-    NSString *newLine = nil;
-    NSString *newHostsFile = nil;
-    SETMESSAGE(NSLocalizedString(@"Failed to unblock domain with name.", nil));
+    id hostsFile = nil;
+    id newLine = nil;
+    id newHostsFile = nil;
     hostsFile = [NSString stringWithContentsOfFile:@"/etc/hosts" encoding:NSUTF8StringEncoding error:nil];
     newHostsFile = hostsFile;
     newLine = [NSString stringWithFormat:@"\n127.0.0.1 %s\n", name];
@@ -379,136 +365,66 @@ void unblockDomainWithName(const char *name) {
     }
 }
 
-uint64_t vnodeForPath(const char *path) {
-    uint64_t vfs_context = 0;
-    uint64_t *vpp = NULL;
-    uint64_t vnode = 0;
-    vfs_context = vfs_context_current();
-    if (!KERN_POINTER_VALID(vfs_context)) {
-        LOG("Failed to get vfs_context.");
-        goto out;
-    }
-    vpp = (uint64_t *)malloc(sizeof(uint64_t));
-    if (vpp == NULL) {
-        LOG("Failed to allocate memory.");
-        goto out;
-    }
-    bzero(vpp, sizeof(sizeof(uint64_t)));
-    if (vnode_lookup(path, O_RDONLY, vpp, vfs_context) != ERR_SUCCESS) {
-        LOG("Failed to get vnode at path \"%s\".", path);
-        goto out;
-    }
-    vnode = *vpp;
-out:
+kptr_t vnodeForPath(const char *path) {
+    auto const vfs_context = vfs_context_current();
+    if (!KERN_POINTER_VALID(vfs_context)) return 0;
+    auto vpp = (kptr_t *)malloc(sizeof(kptr_t));
+    if (vpp == NULL) return 0;
+    bzero(vpp, sizeof(kptr_t));
+    vnode_lookup(path, O_RDONLY, vpp, vfs_context);
+    auto const vnode = *vpp;
     SafeFreeNULL(vpp);
     return vnode;
 }
 
-uint64_t vnodeForSnapshot(int fd, char *name) {
-    uint64_t rvpp_ptr = 0;
-    uint64_t sdvpp_ptr = 0;
-    uint64_t ndp_buf = 0;
-    uint64_t vfs_context = 0;
-    uint64_t sdvpp = 0;
-    uint64_t sdvpp_v_mount = 0;
-    uint64_t sdvpp_v_mount_mnt_data = 0;
-    uint64_t snap_meta_ptr = 0;
-    uint64_t old_name_ptr = 0;
-    uint32_t ndp_old_name_len = 0;
-    uint64_t ndp_old_name = 0;
-    uint64_t snap_meta = 0;
-    uint64_t snap_vnode = 0;
-    rvpp_ptr = kmem_alloc(sizeof(uint64_t));
-    LOG("rvpp_ptr = " ADDR, rvpp_ptr);
-    if (!KERN_POINTER_VALID(rvpp_ptr)) {
-        goto out;
-    }
-    sdvpp_ptr = kmem_alloc(sizeof(uint64_t));
-    LOG("sdvpp_ptr = " ADDR, sdvpp_ptr);
-    if (!KERN_POINTER_VALID(sdvpp_ptr)) {
-        goto out;
-    }
+kptr_t vnodeForSnapshot(int fd, char *name) {
+    auto snap_vnode = KPTR_NULL;
+    auto rvpp_ptr = KPTR_NULL;
+    auto sdvpp_ptr = KPTR_NULL;
+    auto ndp_buf = KPTR_NULL;
+    auto sdvpp = KPTR_NULL;
+    auto snap_meta_ptr = KPTR_NULL;
+    auto old_name_ptr = KPTR_NULL;
+    auto ndp_old_name = KPTR_NULL;
+    rvpp_ptr = kmem_alloc(sizeof(kptr_t));
+    if (!KERN_POINTER_VALID(rvpp_ptr)) goto out;
+    sdvpp_ptr = kmem_alloc(sizeof(kptr_t));
+    if (!KERN_POINTER_VALID(sdvpp_ptr)) goto out;
     ndp_buf = kmem_alloc(816);
-    LOG("ndp_buf = " ADDR, ndp_buf);
-    if (!KERN_POINTER_VALID(ndp_buf)) {
-        goto out;
-    }
-    vfs_context = vfs_context_current();
-    LOG("vfs_context = " ADDR, vfs_context);
-    if (!KERN_POINTER_VALID(vfs_context)) {
-        goto out;
-    }
-    if (kexecute(GETOFFSET(vnode_get_snapshot), fd, rvpp_ptr, sdvpp_ptr, (uint64_t)name, ndp_buf, 2, vfs_context) != ERR_SUCCESS) {
-        goto out;
-    }
+    if (!KERN_POINTER_VALID(ndp_buf)) goto out;
+    auto const vfs_context = vfs_context_current();
+    if (!KERN_POINTER_VALID(vfs_context)) goto out;
+    if (kexecute(GETOFFSET(vnode_get_snapshot), fd, rvpp_ptr, sdvpp_ptr, (kptr_t)name, ndp_buf, 2, vfs_context) != 0) goto out;
     sdvpp = ReadKernel64(sdvpp_ptr);
-    LOG("sdvpp = " ADDR, sdvpp);
-    if (!KERN_POINTER_VALID(sdvpp)) {
-        goto out;
-    }
-    sdvpp_v_mount = ReadKernel64(sdvpp + koffset(KSTRUCT_OFFSET_VNODE_V_MOUNT));
-    LOG("sdvpp_v_mount = " ADDR, sdvpp_v_mount);
-    if (!KERN_POINTER_VALID(sdvpp_v_mount)) {
-        goto out;
-    }
-    sdvpp_v_mount_mnt_data = ReadKernel64(sdvpp_v_mount + koffset(KSTRUCT_OFFSET_MOUNT_MNT_DATA));
-    LOG("sdvpp_v_mount_mnt_data = " ADDR, sdvpp_v_mount_mnt_data);
-    if (!KERN_POINTER_VALID(sdvpp_v_mount_mnt_data)) {
-        goto out;
-    }
-    snap_meta_ptr = kmem_alloc(sizeof(uint64_t));
-    LOG("snap_meta_ptr = " ADDR, snap_meta_ptr);
-    if (!KERN_POINTER_VALID(snap_meta_ptr)) {
-        goto out;
-    }
-    old_name_ptr = kmem_alloc(sizeof(uint64_t));
-    LOG("old_name_ptr = " ADDR, old_name_ptr);
-    if (!KERN_POINTER_VALID(old_name_ptr)) {
-        goto out;
-    }
-    ndp_old_name_len = ReadKernel32(ndp_buf + 336 + 48);
-    LOG("ndp_old_name_len = 0x%x", ndp_old_name_len);
+    if (!KERN_POINTER_VALID(sdvpp_ptr)) goto out;
+    auto const sdvpp_v_mount = ReadKernel64(sdvpp + koffset(KSTRUCT_OFFSET_VNODE_V_MOUNT));
+    if (!KERN_POINTER_VALID(sdvpp_v_mount)) goto out;
+    auto const sdvpp_v_mount_mnt_data = ReadKernel64(sdvpp_v_mount + koffset(KSTRUCT_OFFSET_MOUNT_MNT_DATA));
+    if (!KERN_POINTER_VALID(sdvpp_v_mount_mnt_data)) goto out;
+    snap_meta_ptr = kmem_alloc(sizeof(kptr_t));
+    if (!KERN_POINTER_VALID(snap_meta_ptr)) goto out;
+    old_name_ptr = kmem_alloc(sizeof(kptr_t));
+    if (!KERN_POINTER_VALID(old_name_ptr)) goto out;
     ndp_old_name = ReadKernel64(ndp_buf + 336 + 40);
-    LOG("ndp_old_name = " ADDR, ndp_old_name);
-    if (!KERN_POINTER_VALID(ndp_old_name)) {
-        goto out;
-    }
-    if (kexecute(GETOFFSET(fs_lookup_snapshot_metadata_by_name_and_return_name), sdvpp_v_mount_mnt_data, ndp_old_name, ndp_old_name_len, snap_meta_ptr, old_name_ptr, 0, 0) != ERR_SUCCESS) {
-        goto out;
-    }
-    snap_meta = ReadKernel64(snap_meta_ptr);
-    LOG("snap_meta = " ADDR, snap_meta);
-    if (!KERN_POINTER_VALID(snap_meta)) {
-        goto out;
-    }
+    if (!KERN_POINTER_VALID(ndp_old_name)) goto out;
+    auto const ndp_old_name_len = ReadKernel32(ndp_buf + 336 + 48);
+    if (kexecute(GETOFFSET(fs_lookup_snapshot_metadata_by_name_and_return_name), sdvpp_v_mount_mnt_data, ndp_old_name, ndp_old_name_len, snap_meta_ptr, old_name_ptr, 0, 0) != 0) goto out;
+    auto const snap_meta = ReadKernel64(snap_meta_ptr);
+    if (!KERN_POINTER_VALID(snap_meta)) goto out;
     snap_vnode = kexecute(GETOFFSET(apfs_jhash_getvnode), sdvpp_v_mount_mnt_data, ReadKernel32(sdvpp_v_mount_mnt_data + 440), ReadKernel64(snap_meta + 8), 1, 0, 0, 0);
-    snap_vnode = zm_fix_addr(snap_vnode);
-    LOG("snap_vnode = " ADDR, snap_vnode);
-    if (!KERN_POINTER_VALID(snap_vnode)) {
-        goto out;
-    }
+    if (snap_vnode != KPTR_NULL) snap_vnode = zm_fix_addr(snap_vnode);
+    if (!KERN_POINTER_VALID(snap_vnode)) goto out;
 out:
-    if (KERN_POINTER_VALID(sdvpp)) {
-        vnode_put(sdvpp);
-    }
-    if (KERN_POINTER_VALID(sdvpp_ptr)) {
-        kmem_free(sdvpp_ptr, sizeof(uint64_t));
-    }
-    if (KERN_POINTER_VALID(ndp_buf)) {
-        kmem_free(ndp_buf, 816);
-    }
-    if (KERN_POINTER_VALID(snap_meta_ptr)) {
-        kmem_free(snap_meta_ptr, sizeof(uint64_t));
-    }
-    if (KERN_POINTER_VALID(old_name_ptr)) {
-        kmem_free(old_name_ptr, sizeof(uint64_t));
-    }
+    if (KERN_POINTER_VALID(sdvpp)) vnode_put(sdvpp);
+    if (KERN_POINTER_VALID(sdvpp_ptr)) kmem_free(sdvpp_ptr, sizeof(kptr_t));
+    if (KERN_POINTER_VALID(ndp_buf)) kmem_free(ndp_buf, 816);
+    if (KERN_POINTER_VALID(snap_meta_ptr)) kmem_free(snap_meta_ptr, sizeof(kptr_t));
+    if (KERN_POINTER_VALID(old_name_ptr)) kmem_free(old_name_ptr, sizeof(kptr_t));
     return snap_vnode;
 }
 
 int waitForFile(const char *filename) {
-    int rv = 0;
-    rv = access(filename, F_OK);
+    auto rv = access(filename, F_OK);
     for (int i = 0; !(i >= 100 || rv == ERR_SUCCESS); i++) {
         usleep(100000);
         rv = access(filename, F_OK);
@@ -527,47 +443,29 @@ void waitFor(int seconds) {
     }
 }
 
-static void *load_bytes(FILE *obj_file, off_t offset, uint32_t size) {
-    void *buf = calloc(1, size);
-    fseek(obj_file, offset, SEEK_SET);
-    fread(buf, size, 1, obj_file);
-    return buf;
-}
-
-uint32_t find_macho_header(FILE *file) {
-    uint32_t off = 0;
-    uint32_t *magic = load_bytes(file, off, sizeof(uint32_t));
-    while ((*magic & ~1) != 0xFEEDFACE) {
-        off++;
-        magic = load_bytes(file, off, sizeof(uint32_t));
-    }
-    return off - 1;
-}
-
 void jailbreak()
 {
-    int rv = 0;
-    bool usedPersistedKernelTaskPort = false;
-    pid_t myPid = getpid();
-    uid_t myUid = getuid();
-    host_t myHost = HOST_NULL;
-    host_t myOriginalHost = HOST_NULL;
-    uint64_t myProcAddr = 0;
-    uint64_t myOriginalCredAddr = 0;
-    uint64_t myCredAddr = 0;
-    uint64_t kernelCredAddr = 0;
-    uint64_t Shenanigans = 0;
-    prefs_t *prefs = copy_prefs();
-    bool needStrap = false;
-    bool needSubstrate = false;
-    bool skipSubstrate = false;
-    bool updatedResources = false;
-    NSString *homeDirectory = NSHomeDirectory();
-    NSMutableArray *debsToInstall = [NSMutableArray new];
-    NSMutableString *status = [NSMutableString string];
-    bool betaFirmware = isBetaFirmware();
-    time_t start_time = time(NULL);
-    UIProgressHUD *hud = addProgressHUD();
+    auto rv = 0;
+    auto usedPersistedKernelTaskPort = NO;
+    auto const myPid = getpid();
+    auto const myUid = getuid();
+    auto myHost = HOST_NULL;
+    auto myOriginalHost = HOST_NULL;
+    auto myProcAddr = KPTR_NULL;
+    auto myOriginalCredAddr = KPTR_NULL;
+    auto myCredAddr = KPTR_NULL;
+    auto kernelCredAddr = KPTR_NULL;
+    auto Shenanigans = KPTR_NULL;
+    auto prefs = copy_prefs();
+    auto needStrap = NO;
+    auto needSubstrate = NO;
+    auto skipSubstrate = NO;
+    auto const homeDirectory = NSHomeDirectory();
+    auto debsToInstall = [NSMutableArray new];
+    auto status = [NSMutableString string];
+    auto const betaFirmware = isBetaFirmware();
+    auto const start_time = time(NULL);
+    auto hud = addProgressHUD();
 #define INSERTSTATUS(x) do { [status appendString:x]; } while (false)
 #define PROGRESS(x) do { LOG("Progress: %@", x); updateProgressHUD(hud, x); } while (false)
     
@@ -578,16 +476,16 @@ void jailbreak()
         
         PROGRESS(NSLocalizedString(@"Exploiting kernel...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to exploit kernel.", nil));
-        bool exploit_success = false;
-        mach_port_t persisted_kernel_task_port = MACH_PORT_NULL;
+        auto exploit_success = NO;
+        auto persisted_kernel_task_port = TASK_NULL;
         struct task_dyld_info dyld_info = { 0 };
         mach_msg_type_number_t count = TASK_DYLD_INFO_COUNT;
-        uint64_t persisted_cache_blob = 0;
-        uint64_t persisted_kernel_slide = 0;
+        auto persisted_cache_blob = KPTR_NULL;
+        auto persisted_kernel_slide = KPTR_NULL;
         myHost = mach_host_self();
         _assert(MACH_PORT_VALID(myHost), message, true);
         myOriginalHost = myHost;
-        pid_t pid = 0;
+        auto pid = 0;
         if ((task_for_pid(mach_task_self(), 0, &persisted_kernel_task_port) == KERN_SUCCESS ||
             host_get_special_port(myHost, 0, 4, &persisted_kernel_task_port) == KERN_SUCCESS) &&
             MACH_PORT_VALID(persisted_kernel_task_port) &&
@@ -600,9 +498,9 @@ void jailbreak()
             kernel_slide = persisted_kernel_slide;
 
             if (persisted_cache_blob != STATIC_KERNEL_BASE_ADDRESS + persisted_kernel_slide) {
-                size_t blob_size = rk64(persisted_cache_blob);
+                auto blob_size = rk32(persisted_cache_blob + offsetof(struct cache_blob, size));
                 LOG("Restoring persisted offsets cache");
-                struct cache_blob *blob = create_cache_blob(blob_size);
+                auto blob = create_cache_blob(blob_size);
                 _assert(rkbuffer(persisted_cache_blob, blob, blob_size), message, true);
                 import_cache_blob(blob);
                 SafeFreeNULL(blob);
@@ -610,15 +508,15 @@ void jailbreak()
                 found_offsets = true;
             }
             
-            usedPersistedKernelTaskPort = true;
-            exploit_success = true;
+            usedPersistedKernelTaskPort = YES;
+            exploit_success = YES;
         } else {
             switch (prefs->exploit) {
                 case empty_list_exploit: {
                     if (vfs_sploit() &&
                         MACH_PORT_VALID(tfp0) &&
                         KERN_POINTER_VALID(kernel_base = find_kernel_base())) {
-                        exploit_success = true;
+                        exploit_success = YES;
                     }
                     break;
                 }
@@ -626,7 +524,7 @@ void jailbreak()
                     if (mptcp_go() &&
                         MACH_PORT_VALID(tfp0) &&
                         KERN_POINTER_VALID(kernel_base = find_kernel_base())) {
-                        exploit_success = true;
+                        exploit_success = YES;
                     }
                     break;
                 }
@@ -634,7 +532,7 @@ void jailbreak()
                     if (async_wake_go() &&
                         MACH_PORT_VALID(tfp0) &&
                         KERN_POINTER_VALID(kernel_base = find_kernel_base())) {
-                        exploit_success = true;
+                        exploit_success = YES;
                     }
                     break;
                 }
@@ -645,27 +543,27 @@ void jailbreak()
                         kernel_slide_init() &&
                         kernel_slide != -1 &&
                         KERN_POINTER_VALID(kernel_base = (kernel_slide + STATIC_KERNEL_BASE_ADDRESS))) {
-                        exploit_success = true;
+                        exploit_success = YES;
                     }
                     break;
                 }
                 case mach_swap_exploit: {
-                    machswap_offsets_t *machswap_offsets = NULL;
-                    if ((machswap_offsets = get_machswap_offsets()) != NULL &&
+                    auto const machswap_offsets = get_machswap_offsets();
+                    if (machswap_offsets != NULL &&
                         machswap_exploit(machswap_offsets) == ERR_SUCCESS &&
                         MACH_PORT_VALID(tfp0) &&
                         KERN_POINTER_VALID(kernel_base)) {
-                        exploit_success = true;
+                        exploit_success = YES;
                     }
                     break;
                 }
                 case mach_swap_2_exploit: {
-                    machswap_offsets_t *machswap_offsets = NULL;
-                    if ((machswap_offsets = get_machswap_offsets()) != NULL &&
+                    auto const machswap_offsets = get_machswap_offsets();
+                    if (machswap_offsets != NULL &&
                         machswap2_exploit(machswap_offsets) == ERR_SUCCESS &&
                         MACH_PORT_VALID(tfp0) &&
                         KERN_POINTER_VALID(kernel_base)) {
-                        exploit_success = true;
+                        exploit_success = YES;
                     }
                     break;
                 }
@@ -683,11 +581,11 @@ void jailbreak()
         LOG("kernel_slide: " ADDR, kernel_slide);
         if (exploit_success && !verify_tfp0()) {
             LOG("Failed to verify TFP0.");
-            exploit_success = false;
+            exploit_success = NO;
         }
         if (exploit_success && ReadKernel32(kernel_base) != MACH_HEADER_MAGIC) {
             LOG("Failed to verify kernel_base.");
-            exploit_success = false;
+            exploit_success = NO;
         }
         if (!exploit_success) {
             NOTICE(NSLocalizedString(@"Failed to exploit kernel. This is not an error. Reboot and try again.", nil), true, false);
@@ -706,21 +604,21 @@ void jailbreak()
             
             PROGRESS(NSLocalizedString(@"Initializing patchfinder...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to initialize patchfinder.", nil));
-            const char *original_kernel_cache_path = "/System/Library/Caches/com.apple.kernelcaches/kernelcache";
-            const char *decompressed_kernel_cache_path = [homeDirectory stringByAppendingPathComponent:@"Documents/kernelcache.dec"].UTF8String;
+            auto const original_kernel_cache_path = "/System/Library/Caches/com.apple.kernelcaches/kernelcache";
+            auto const decompressed_kernel_cache_path = [homeDirectory stringByAppendingPathComponent:@"Documents/kernelcache.dec"].UTF8String;
             if (!canRead(decompressed_kernel_cache_path)) {
-                FILE *original_kernel_cache = fopen(original_kernel_cache_path, "rb");
+                auto const original_kernel_cache = fopen(original_kernel_cache_path, "rb");
                 _assert(original_kernel_cache != NULL, message, true);
-                FILE *decompressed_kernel_cache = fopen(decompressed_kernel_cache_path, "w+b");
+                auto const decompressed_kernel_cache = fopen(decompressed_kernel_cache_path, "w+b");
                 _assert(decompressed_kernel_cache != NULL, message, true);
                 _assert(decompress_kernel(original_kernel_cache, decompressed_kernel_cache, NULL, true) == ERR_SUCCESS, message, true);
                 fclose(decompressed_kernel_cache);
                 fclose(original_kernel_cache);
             }
-            char *kernelVersion = getKernelVersion();
+            auto kernelVersion = getKernelVersion();
             _assert(kernelVersion != NULL, message, true);
             if (init_kernel(NULL, 0, decompressed_kernel_cache_path) != ERR_SUCCESS ||
-                find_strref(kernelVersion, 1, string_base_const, true, false) == 0) {
+                find_strref(kernelVersion, 1, string_base_const, true, false) == KPTR_NULL) {
                 _assert(clean_file(decompressed_kernel_cache_path), message, true);
                 _assert(false, message, true);
             }
@@ -743,7 +641,7 @@ void jailbreak()
         }
         offset_options = GETOFFSET(unrestrict-options);
         if (!offset_options) {
-            offset_options = kmem_alloc(sizeof(uint64_t));
+            offset_options = kmem_alloc(sizeof(kptr_t));
             wk64(offset_options, 0);
             SETOFFSET(unrestrict-options, offset_options);
         }
@@ -821,7 +719,7 @@ void jailbreak()
     
     {
         // Initialize jailbreak.
-        static uint64_t ShenanigansPatch = 0xca13feba37be;
+        auto const ShenanigansPatch = (kptr_t)0xca13feba37be;
         
         PROGRESS(NSLocalizedString(@"Initializing jailbreak...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to initialize jailbreak.", nil));
@@ -889,7 +787,7 @@ void jailbreak()
         
         PROGRESS(NSLocalizedString(@"Writing a test file to UserFS...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to write a test file to UserFS.", nil));
-        const char *testFile = [NSString stringWithFormat:@"/var/mobile/test-%lu.txt", time(NULL)].UTF8String;
+        auto const testFile = [NSString stringWithFormat:@"/var/mobile/test-%lu.txt", time(NULL)].UTF8String;
         writeTestFile(testFile);
         LOG("Successfully wrote a test file to UserFS.");
     }
@@ -898,14 +796,14 @@ void jailbreak()
     
     {
         if (prefs->dump_apticket) {
-            NSString *originalFile = @"/System/Library/Caches/apticket.der";
-            NSString *dumpFile = [homeDirectory stringByAppendingPathComponent:@"Documents/apticket.der"];
+            auto const originalFile = @"/System/Library/Caches/apticket.der";
+            auto const dumpFile = [homeDirectory stringByAppendingPathComponent:@"Documents/apticket.der"];
             if (![sha1sum(originalFile) isEqualToString:sha1sum(dumpFile)]) {
                 // Dump APTicket.
                 
                 PROGRESS(NSLocalizedString(@"Dumping APTicket...", nil));
                 SETMESSAGE(NSLocalizedString(@"Failed to dump APTicket.", nil));
-                NSData *fileData = [NSData dataWithContentsOfFile:originalFile];
+                auto const fileData = [NSData dataWithContentsOfFile:originalFile];
                 _assert(([fileData writeToFile:dumpFile atomically:YES]), message, true);
                 LOG("Successfully dumped APTicket.");
             }
@@ -925,7 +823,7 @@ void jailbreak()
             LOG("Successfully unlocked nvram.");
             
             _assert(runCommand("/usr/sbin/nvram", "-p", NULL) == ERR_SUCCESS, message, true);
-            const char *bootNonceKey = "com.apple.System.boot-nonce";
+            auto const bootNonceKey = "com.apple.System.boot-nonce";
             if (runCommand("/usr/sbin/nvram", bootNonceKey, NULL) != ERR_SUCCESS ||
                 strstr(lastSystemOutput.bytes, prefs->boot_nonce) == NULL) {
                 // Set boot-nonce.
@@ -956,8 +854,8 @@ void jailbreak()
         
         PROGRESS(NSLocalizedString(@"Logging slide...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to log slide.", nil));
-        NSString *file = @(SLIDE_FILE);
-        NSData *fileData = [[NSString stringWithFormat:@(ADDR "\n"), kernel_slide] dataUsingEncoding:NSUTF8StringEncoding];
+        auto const file = @(SLIDE_FILE);
+        auto const fileData = [[NSString stringWithFormat:@(ADDR "\n"), kernel_slide] dataUsingEncoding:NSUTF8StringEncoding];
         if (![[NSData dataWithContentsOfFile:file] isEqual:fileData]) {
             _assert(clean_file(file.UTF8String), message, true);
             _assert(create_file_data(file.UTF8String, 0, 0644, fileData), message, true);
@@ -973,7 +871,7 @@ void jailbreak()
         
         PROGRESS(NSLocalizedString(@"Logging ECID...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to log ECID.", nil));
-        NSString *ECID = getECID();
+        auto const ECID = getECID();
         if (ECID != nil) {
             prefs->ecid = ECID.UTF8String;
             _assert(set_prefs(prefs), message, true);
@@ -987,17 +885,17 @@ void jailbreak()
     UPSTAGE();
     
     {
-        NSArray <NSString *> *array = @[@"/var/MobileAsset/Assets/com_apple_MobileAsset_SoftwareUpdate",
-                                        @"/var/MobileAsset/Assets/com_apple_MobileAsset_SoftwareUpdateDocumentation",
-                                        @"/var/MobileAsset/AssetsV2/com_apple_MobileAsset_SoftwareUpdate",
-                                        @"/var/MobileAsset/AssetsV2/com_apple_MobileAsset_SoftwareUpdateDocumentation"];
+        auto const array = @[@"/var/MobileAsset/Assets/com_apple_MobileAsset_SoftwareUpdate",
+                             @"/var/MobileAsset/Assets/com_apple_MobileAsset_SoftwareUpdateDocumentation",
+                             @"/var/MobileAsset/AssetsV2/com_apple_MobileAsset_SoftwareUpdate",
+                             @"/var/MobileAsset/AssetsV2/com_apple_MobileAsset_SoftwareUpdateDocumentation"];
         if (prefs->disable_auto_updates) {
             // Disable Auto Updates.
             
             PROGRESS(NSLocalizedString(@"Disabling Auto Updates...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to disable auto updates.", nil));
-            for (NSString *path in array) {
-                ensure_symlink("/dev/null", path.UTF8String);
+            for (id path in array) {
+                ensure_symlink("/dev/null", [path UTF8String]);
             }
             _assert(modifyPlist(@"/var/mobile/Library/Preferences/com.apple.Preferences.plist", ^(id plist) {
                 plist[@"kBadgedForSoftwareUpdateKey"] = @NO;
@@ -1010,8 +908,8 @@ void jailbreak()
             
             PROGRESS(NSLocalizedString(@"Enabling Auto Updates...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to enable auto updates.", nil));
-            for (NSString *path in array) {
-                ensure_directory(path.UTF8String, 0, 0755);
+            for (id path in array) {
+                ensure_directory([path UTF8String], 0, 0755);
             }
             _assert(modifyPlist(@"/var/mobile/Library/Preferences/com.apple.Preferences.plist", ^(id plist) {
                 plist[@"kBadgedForSoftwareUpdateKey"] = @YES;
@@ -1028,15 +926,15 @@ void jailbreak()
         
         PROGRESS(NSLocalizedString(@"Remounting RootFS...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to remount RootFS.", nil));
-        int rootfd = open("/", O_RDONLY);
+        auto rootfd = open("/", O_RDONLY);
         _assert(rootfd > 0, message, true);
-        const char **snapshots = snapshot_list(rootfd);
-        char *systemSnapshot = copySystemSnapshot();
+        auto snapshots = snapshot_list(rootfd);
+        auto systemSnapshot = copySystemSnapshot();
         _assert(systemSnapshot != NULL, message, true);
-        const char *original_snapshot = "orig-fs";
-        bool has_original_snapshot = false;
-        const char *thedisk = "/dev/disk0s1s1";
-        const char *oldest_snapshot = NULL;
+        auto const original_snapshot = "orig-fs";
+        auto has_original_snapshot = NO;
+        auto const thedisk = "/dev/disk0s1s1";
+        auto oldest_snapshot = NULL;
         _assert(runCommand("/sbin/mount", NULL) == ERR_SUCCESS, message, false);
         if (snapshots == NULL) {
             close(rootfd);
@@ -1045,10 +943,10 @@ void jailbreak()
             
             LOG("Clearing dev vnode's si_flags...");
             SETMESSAGE(NSLocalizedString(@"Failed to clear dev vnode's si_flags.", nil));
-            uint64_t devVnode = vnodeForPath(thedisk);
+            auto devVnode = vnodeForPath(thedisk);
             LOG("devVnode = " ADDR, devVnode);
             _assert(KERN_POINTER_VALID(devVnode), message, true);
-            uint64_t v_specinfo = ReadKernel64(devVnode + koffset(KSTRUCT_OFFSET_VNODE_VU_SPECINFO));
+            auto v_specinfo = ReadKernel64(devVnode + koffset(KSTRUCT_OFFSET_VNODE_VU_SPECINFO));
             LOG("v_specinfo = " ADDR, v_specinfo);
             _assert(KERN_POINTER_VALID(v_specinfo), message, true);
             WriteKernel32(v_specinfo + koffset(KSTRUCT_OFFSET_SPECINFO_SI_FLAGS), 0);
@@ -1059,9 +957,9 @@ void jailbreak()
             
             LOG("Mounting RootFS...");
             SETMESSAGE(NSLocalizedString(@"Unable to mount RootFS.", nil));
-            NSString *invalidRootMessage = NSLocalizedString(@"RootFS already mounted, delete OTA file from Settings - Storage if present and reboot.", nil);
+            auto const invalidRootMessage = NSLocalizedString(@"RootFS already mounted, delete OTA file from Settings - Storage if present and reboot.", nil);
             _assert(!is_mountpoint("/var/MobileSoftwareUpdate/mnt1"), invalidRootMessage, true);
-            const char *rootFsMountPoint = "/private/var/tmp/jb/mnt1";
+            auto const rootFsMountPoint = "/private/var/tmp/jb/mnt1";
             if (is_mountpoint(rootFsMountPoint)) {
                 _assert(unmount(rootFsMountPoint, MNT_FORCE) == ERR_SUCCESS, message, true);
             }
@@ -1069,13 +967,13 @@ void jailbreak()
             _assert(ensure_directory(rootFsMountPoint, 0, 0755), message, true);
             const char *argv[] = {"/sbin/mount_apfs", thedisk, rootFsMountPoint, NULL};
             _assert(runCommandv(argv[0], 3, argv, ^(pid_t pid) {
-                uint64_t procStructAddr = get_proc_struct_for_pid(pid);
+                auto const procStructAddr = get_proc_struct_for_pid(pid);
                 LOG("procStructAddr = " ADDR, procStructAddr);
                 _assert(KERN_POINTER_VALID(procStructAddr), message, true);
                 give_creds_to_process_at_addr(procStructAddr, kernelCredAddr);
             }) == ERR_SUCCESS, message, true);
             _assert(runCommand("/sbin/mount", NULL) == ERR_SUCCESS, message, true);
-            const char *systemSnapshotLaunchdPath = [@(rootFsMountPoint) stringByAppendingPathComponent:@"sbin/launchd"].UTF8String;
+            auto const systemSnapshotLaunchdPath = [@(rootFsMountPoint) stringByAppendingPathComponent:@"sbin/launchd"].UTF8String;
             _assert(waitForFile(systemSnapshotLaunchdPath) == ERR_SUCCESS, message, true);
             LOG("Successfully mounted RootFS.");
             
@@ -1092,24 +990,24 @@ void jailbreak()
                 LOG("\t%s", *snapshot);
             }
             SafeFreeNULL(snapshots);
-            NSString *systemVersionPlist = @"/System/Library/CoreServices/SystemVersion.plist";
-            NSString *rootSystemVersionPlist = [@(rootFsMountPoint) stringByAppendingPathComponent:systemVersionPlist];
+            auto const systemVersionPlist = @"/System/Library/CoreServices/SystemVersion.plist";
+            auto const rootSystemVersionPlist = [@(rootFsMountPoint) stringByAppendingPathComponent:systemVersionPlist];
             _assert(rootSystemVersionPlist != nil, message, true);
-            NSDictionary *snapshotSystemVersion = [NSDictionary dictionaryWithContentsOfFile:systemVersionPlist];
+            auto const snapshotSystemVersion = [NSDictionary dictionaryWithContentsOfFile:systemVersionPlist];
             _assert(snapshotSystemVersion != nil, message, true);
-            NSDictionary *rootfsSystemVersion = [NSDictionary dictionaryWithContentsOfFile:rootSystemVersionPlist];
+            auto const rootfsSystemVersion = [NSDictionary dictionaryWithContentsOfFile:rootSystemVersionPlist];
             _assert(rootfsSystemVersion != nil, message, true);
             if (![rootfsSystemVersion[@"ProductBuildVersion"] isEqualToString:snapshotSystemVersion[@"ProductBuildVersion"]]) {
                 LOG("snapshot VersionPlist: %@", snapshotSystemVersion);
                 LOG("rootfs VersionPlist: %@", rootfsSystemVersion);
                 _assert("BuildVersions match"==NULL, invalidRootMessage, true);
             }
-            const char *test_snapshot = "test-snapshot";
+            auto const test_snapshot = "test-snapshot";
             _assert(fs_snapshot_create(rootfd, test_snapshot, 0) == ERR_SUCCESS, message, true);
             _assert(fs_snapshot_delete(rootfd, test_snapshot, 0) == ERR_SUCCESS, message, true);
-            uint64_t system_snapshot_vnode = 0;
-            uint64_t system_snapshot_vnode_v_data = 0;
-            uint32_t system_snapshot_vnode_v_data_flag = 0;
+            auto system_snapshot_vnode = KPTR_NULL;
+            auto system_snapshot_vnode_v_data = KPTR_NULL;
+            auto system_snapshot_vnode_v_data_flag = 0;
             if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_0) {
                 system_snapshot_vnode = vnodeForSnapshot(rootfd, systemSnapshot);
                 LOG("system_snapshot_vnode = " ADDR, system_snapshot_vnode);
@@ -1141,27 +1039,27 @@ void jailbreak()
             LOG("APFS Snapshots:");
             for (const char **snapshot = snapshots; *snapshot; snapshot++) {
                 if (oldest_snapshot == NULL) {
-                    oldest_snapshot = *snapshot;
+                    oldest_snapshot = strdup(*snapshot);
                 }
                 if (strcmp(original_snapshot, *snapshot) == 0) {
-                    has_original_snapshot = true;
+                    has_original_snapshot = YES;
                 }
                 LOG("%s", *snapshot);
             }
         }
         
         _assert(runCommand("/sbin/mount", NULL) == ERR_SUCCESS, message, false);
-        uint64_t rootfs_vnode = vnodeForPath("/");
+        auto rootfs_vnode = vnodeForPath("/");
         LOG("rootfs_vnode = " ADDR, rootfs_vnode);
         _assert(KERN_POINTER_VALID(rootfs_vnode), message, true);
-        uint64_t v_mount = ReadKernel64(rootfs_vnode + koffset(KSTRUCT_OFFSET_VNODE_V_MOUNT));
+        auto v_mount = ReadKernel64(rootfs_vnode + koffset(KSTRUCT_OFFSET_VNODE_V_MOUNT));
         LOG("v_mount = " ADDR, v_mount);
         _assert(KERN_POINTER_VALID(v_mount), message, true);
-        uint32_t v_flag = ReadKernel32(v_mount + koffset(KSTRUCT_OFFSET_MOUNT_MNT_FLAG));
+        auto v_flag = ReadKernel32(v_mount + koffset(KSTRUCT_OFFSET_MOUNT_MNT_FLAG));
         if ((v_flag & MNT_RDONLY) || (v_flag & MNT_NOSUID)) {
             v_flag &= ~(MNT_RDONLY | MNT_NOSUID);
             WriteKernel32(v_mount + koffset(KSTRUCT_OFFSET_MOUNT_MNT_FLAG), v_flag & ~MNT_ROOTFS);
-            char *opts = strdup(thedisk);
+            auto opts = strdup(thedisk);
             _assert(opts != NULL, message, true);
             _assert(mount("apfs", "/", MNT_UPDATE, (void *)&opts) == ERR_SUCCESS, message, true);
             SafeFreeNULL(opts);
@@ -1169,7 +1067,7 @@ void jailbreak()
         }
         _assert(vnode_put(rootfs_vnode) == ERR_SUCCESS, message, true);
         _assert(runCommand("/sbin/mount", NULL) == ERR_SUCCESS, message, false);
-        NSString *file = [NSString stringWithContentsOfFile:@"/.installed_unc0ver" encoding:NSUTF8StringEncoding error:nil];
+        auto const file = [NSString stringWithContentsOfFile:@"/.installed_unc0ver" encoding:NSUTF8StringEncoding error:nil];
         needStrap = file == nil;
         needStrap |= ![file isEqualToString:@""] && ![file isEqualToString:[NSString stringWithFormat:@"%f\n", kCFCoreFoundationVersionNumber]];
         needStrap &= access("/electra", F_OK) != ERR_SUCCESS;
@@ -1183,9 +1081,10 @@ void jailbreak()
                 _assert(fs_snapshot_create(rootfd, original_snapshot, 0) == ERR_SUCCESS, message, true);
             }
         }
-        SafeFreeNULL(systemSnapshot);
-        SafeFreeNULL(snapshots);
         close(rootfd);
+        SafeFreeNULL(snapshots);
+        SafeFreeNULL(systemSnapshot);
+        SafeFreeNULL(oldest_snapshot);
         LOG("Successfully remounted RootFS.");
         INSERTSTATUS(NSLocalizedString(@"Remounted RootFS.\n", nil));
     }
@@ -1197,7 +1096,7 @@ void jailbreak()
         
         PROGRESS(NSLocalizedString(@"Writing a test file to RootFS...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to write a test file to RootFS.", nil));
-        const char *testFile = [NSString stringWithFormat:@"/test-%lu.txt", time(NULL)].UTF8String;
+        auto const testFile = [NSString stringWithFormat:@"/test-%lu.txt", time(NULL)].UTF8String;
         writeTestFile(testFile);
         LOG("Successfully wrote a test file to RootFS.");
     }
@@ -1205,16 +1104,16 @@ void jailbreak()
     UPSTAGE();
     
     {
-        NSArray <NSString *> *array = @[@"/var/Keychains/ocspcache.sqlite3",
-                                        @"/var/Keychains/ocspcache.sqlite3-shm",
-                                        @"/var/Keychains/ocspcache.sqlite3-wal"];
+        auto const array = @[@"/var/Keychains/ocspcache.sqlite3",
+                             @"/var/Keychains/ocspcache.sqlite3-shm",
+                             @"/var/Keychains/ocspcache.sqlite3-wal"];
         if (prefs->disable_app_revokes && kCFCoreFoundationVersionNumber < kCFCoreFoundationVersionNumber_iOS_12_0) {
             // Disable app revokes.
             PROGRESS(NSLocalizedString(@"Disabling app revokes...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to disable app revokes.", nil));
             blockDomainWithName("ocsp.apple.com");
-            for (NSString *path in array) {
-                ensure_symlink("/dev/null", path.UTF8String);
+            for (id path in array) {
+                ensure_symlink("/dev/null", [path UTF8String]);
             }
             LOG("Successfully disabled app revokes.");
             INSERTSTATUS(NSLocalizedString(@"Disabled App Revokes.\n", nil));
@@ -1223,9 +1122,9 @@ void jailbreak()
             PROGRESS(NSLocalizedString(@"Enabling app revokes...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to enable app revokes.", nil));
             unblockDomainWithName("ocsp.apple.com");
-            for (NSString *path in array) {
-                if (is_symlink(path.UTF8String)) {
-                    clean_file(path.UTF8String);
+            for (id path in array) {
+                if (is_symlink([path UTF8String])) {
+                    clean_file([path UTF8String]);
                 }
             }
             LOG("Successfully enabled app revokes.");
@@ -1249,8 +1148,8 @@ void jailbreak()
     UPSTAGE();
     
     {
-        NSString *offsetsFile = @"/jb/offsets.plist";
-        NSMutableDictionary *dictionary = [NSMutableDictionary new];
+        auto const offsetsFile = @"/jb/offsets.plist";
+        auto dictionary = [NSMutableDictionary new];
 #define CACHEADDR(value, name) do { \
     dictionary[@(name)] = ADDRSTRING(value); \
 } while (false)
@@ -1318,21 +1217,21 @@ void jailbreak()
             NOTICE(NSLocalizedString(@"Will restore RootFS. This may take a while. Don't exit the app and don't let the device lock.", nil), 1, 1);
             
             LOG("Reverting back RootFS remount...");
-            int rootfd = open("/", O_RDONLY);
+            auto const rootfd = open("/", O_RDONLY);
             _assert(rootfd > 0, message, true);
-            const char **snapshots = snapshot_list(rootfd);
+            auto snapshots = snapshot_list(rootfd);
             _assert(snapshots != NULL, message, true);
-            const char *snapshot = *snapshots;
+            auto const snapshot = *snapshots;
             LOG("%s", snapshot);
             _assert(snapshot != NULL, message, true);
-            const char *systemSnapshotMountPoint = "/private/var/tmp/jb/mnt2";
+            auto const systemSnapshotMountPoint = "/private/var/tmp/jb/mnt2";
             if (is_mountpoint(systemSnapshotMountPoint)) {
                 _assert(unmount(systemSnapshotMountPoint, MNT_FORCE) == ERR_SUCCESS, message, true);
             }
             _assert(clean_file(systemSnapshotMountPoint), message, true);
             _assert(ensure_directory(systemSnapshotMountPoint, 0, 0755), message, true);
             _assert(fs_snapshot_mount(rootfd, systemSnapshotMountPoint, snapshot, 0) == ERR_SUCCESS, message, true);
-            const char *systemSnapshotLaunchdPath = [@(systemSnapshotMountPoint) stringByAppendingPathComponent:@"sbin/launchd"].UTF8String;
+            auto const systemSnapshotLaunchdPath = [@(systemSnapshotMountPoint) stringByAppendingPathComponent:@"sbin/launchd"].UTF8String;
             _assert(waitForFile(systemSnapshotLaunchdPath) == ERR_SUCCESS, message, true);
             _assert(extractDebsForPkg(@"rsync", nil, false), message, true);
             _assert(extractDebsForPkg(@"uikittools", nil, false), message, true);
@@ -1344,7 +1243,7 @@ void jailbreak()
             }
             _assert(unmount(systemSnapshotMountPoint, MNT_FORCE) == ERR_SUCCESS, message, true);
             if (!(kCFCoreFoundationVersionNumber < kCFCoreFoundationVersionNumber_iOS_11_3)) {
-                char *systemSnapshot = copySystemSnapshot();
+                auto systemSnapshot = copySystemSnapshot();
                 _assert(systemSnapshot != NULL, message, true);
                 _assert(fs_snapshot_rename(rootfd, snapshot, systemSnapshot, 0) == ERR_SUCCESS, message, true);
                 SafeFreeNULL(systemSnapshot);
@@ -1359,17 +1258,14 @@ void jailbreak()
             
             LOG("Cleaning up...");
             SETMESSAGE(NSLocalizedString(@"Failed to clean up.", nil));
-            static const char *cleanUpFileList[] = {
-                "/var/cache",
-                "/var/lib",
-                "/var/stash",
-                "/var/db/stash",
-                "/var/mobile/Library/Cydia",
-                "/var/mobile/Library/Caches/com.saurik.Cydia",
-                NULL
-            };
-            for (const char **file = cleanUpFileList; *file != NULL; file++) {
-                clean_file(*file);
+            auto const cleanUpFileList = @[@"/var/cache",
+                                           @"/var/lib",
+                                           @"/var/stash",
+                                           @"/var/db/stash",
+                                           @"/var/mobile/Library/Cydia",
+                                           @"/var/mobile/Library/Caches/com.saurik.Cydia"];
+            for (id file in cleanUpFileList) {
+                clean_file([file UTF8String]);
             }
             LOG("Successfully cleaned up.");
             
@@ -1422,13 +1318,13 @@ void jailbreak()
     if (prefs->ssh_only && needStrap) {
         PROGRESS(NSLocalizedString(@"Enabling SSH...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to enable SSH.", nil));
-        NSMutableArray *toInject = [NSMutableArray new];
+        auto toInject = [NSMutableArray new];
         if (!verifySums(pathForResource(@"binpack64-256.md5sums"), HASHTYPE_MD5)) {
-            ArchiveFile *binpack64 = [ArchiveFile archiveWithFile:pathForResource(@"binpack64-256.tar.lzma")];
+            auto binpack64 = [ArchiveFile archiveWithFile:pathForResource(@"binpack64-256.tar.lzma")];
             _assert(binpack64 != nil, message, true);
             _assert([binpack64 extractToPath:@"/jb"], message, true);
-            for (NSString *file in binpack64.files.allKeys) {
-                NSString *path = [@"/jb" stringByAppendingPathComponent:file];
+            for (id file in binpack64.files.allKeys) {
+                auto const path = [@"/jb" stringByAppendingPathComponent:file];
                 if (cdhashFor(path) != nil) {
                     if (![toInject containsObject:path]) {
                         [toInject addObject:path];
@@ -1436,26 +1332,26 @@ void jailbreak()
                 }
             }
         }
-        NSFileManager *fileManager = [NSFileManager defaultManager];
-        NSDirectoryEnumerator *directoryEnumerator = [fileManager enumeratorAtURL:[NSURL URLWithString:@"/jb"] includingPropertiesForKeys:@[NSURLIsDirectoryKey] options:0 errorHandler:nil];
+        auto const fileManager = [NSFileManager defaultManager];
+        auto directoryEnumerator = [fileManager enumeratorAtURL:[NSURL URLWithString:@"/jb"] includingPropertiesForKeys:@[NSURLIsDirectoryKey] options:0 errorHandler:nil];
         _assert(directoryEnumerator != nil, message, true);
-        for (NSURL *URL in directoryEnumerator) {
-            NSString *path = [URL path];
+        for (id URL in directoryEnumerator) {
+            auto path = [URL path];
             if (cdhashFor(path) != nil) {
                 if (![toInject containsObject:path]) {
                     [toInject addObject:path];
                 }
             }
         }
-        for (NSString *file in [fileManager contentsOfDirectoryAtPath:@"/Applications" error:nil]) {
-            NSString *path = [@"/Applications" stringByAppendingPathComponent:file];
-            NSMutableDictionary *info_plist = [NSMutableDictionary dictionaryWithContentsOfFile:[path stringByAppendingPathComponent:@"Info.plist"]];
+        for (id file in [fileManager contentsOfDirectoryAtPath:@"/Applications" error:nil]) {
+            auto path = [@"/Applications" stringByAppendingPathComponent:file];
+            auto info_plist = [NSMutableDictionary dictionaryWithContentsOfFile:[path stringByAppendingPathComponent:@"Info.plist"]];
             if (info_plist == nil) continue;
             if ([info_plist[@"CFBundleIdentifier"] hasPrefix:@"com.apple."]) continue;
             directoryEnumerator = [fileManager enumeratorAtURL:[NSURL URLWithString:path] includingPropertiesForKeys:@[NSURLIsDirectoryKey] options:0 errorHandler:nil];
             if (directoryEnumerator == nil) continue;
-            for (NSURL *URL in directoryEnumerator) {
-                NSString *path = [URL path];
+            for (id URL in directoryEnumerator) {
+                auto path = [URL path];
                 if (cdhashFor(path) != nil) {
                     if (![toInject containsObject:path]) {
                         [toInject addObject:path];
@@ -1481,7 +1377,7 @@ void jailbreak()
         _assert(ensure_directory("/jb/Library/LaunchDaemons", 0, 0755), message, true);
         _assert(ensure_directory("/jb/etc/rc.d", 0, 0755), message, true);
         if (access("/jb/Library/LaunchDaemons/dropbear.plist", F_OK) != ERR_SUCCESS) {
-            NSMutableDictionary *dropbear_plist = [NSMutableDictionary new];
+            auto dropbear_plist = [NSMutableDictionary new];
             _assert(dropbear_plist, message, true);
             dropbear_plist[@"Program"] = @"/jb/usr/local/bin/dropbear";
             dropbear_plist[@"RunAtLoad"] = @YES;
@@ -1499,12 +1395,12 @@ void jailbreak()
             _assert(init_file("/jb/Library/LaunchDaemons/dropbear.plist", 0, 0644), message, true);
         }
         if (prefs->load_daemons) {
-            for (NSString *file in [fileManager contentsOfDirectoryAtPath:@"/jb/Library/LaunchDaemons" error:nil]) {
-                NSString *path = [@"/jb/Library/LaunchDaemons" stringByAppendingPathComponent:file];
+            for (id file in [fileManager contentsOfDirectoryAtPath:@"/jb/Library/LaunchDaemons" error:nil]) {
+                auto const path = [@"/jb/Library/LaunchDaemons" stringByAppendingPathComponent:file];
                 runCommand("/jb/bin/launchctl", "load", path.UTF8String, NULL);
             }
-            for (NSString *file in [fileManager contentsOfDirectoryAtPath:@"/jb/etc/rc.d" error:nil]) {
-                NSString *path = [@"/jb/etc/rc.d" stringByAppendingPathComponent:file];
+            for (id file in [fileManager contentsOfDirectoryAtPath:@"/jb/etc/rc.d" error:nil]) {
+                auto const path = [@"/jb/etc/rc.d" stringByAppendingPathComponent:file];
                 if ([fileManager isExecutableFileAtPath:path]) {
                     runCommand("/jb/bin/bash", "-c", path.UTF8String, NULL);
                 }
@@ -1544,18 +1440,18 @@ void jailbreak()
                          );
         if (needSubstrate) {
             LOG(@"We need substrate.");
-            NSString *substrateDeb = debForPkg(@"mobilesubstrate");
+            auto const substrateDeb = debForPkg(@"mobilesubstrate");
             _assert(substrateDeb != nil, message, true);
             if (pidOfProcess("/usr/libexec/substrated") == 0) {
                 _assert(extractDeb(substrateDeb), message, true);
             } else {
-                skipSubstrate = true;
+                skipSubstrate = YES;
                 LOG("Substrate is running, not extracting again for now.");
             }
             [debsToInstall addObject:substrateDeb];
         }
         
-        NSArray *resourcesPkgs = resolveDepsForPkg(@"jailbreak-resources", true);
+        auto resourcesPkgs = resolveDepsForPkg(@"jailbreak-resources", true);
         _assert(resourcesPkgs != nil, message, true);
         resourcesPkgs = [@[@"system-memory-reset-fix"] arrayByAddingObjectsFromArray:resourcesPkgs];
         if (betaFirmware) {
@@ -1565,9 +1461,9 @@ void jailbreak()
             resourcesPkgs = [@[@"com.ps.letmeblock"] arrayByAddingObjectsFromArray:resourcesPkgs];
         }
 
-        NSMutableArray *pkgsToRepair = [NSMutableArray new];
+        auto pkgsToRepair = [NSMutableArray new];
         LOG("Resource Pkgs: \"%@\".", resourcesPkgs);
-        for (NSString *pkg in resourcesPkgs) {
+        for (id pkg in resourcesPkgs) {
             // Ignore mobilesubstrate because we just handled that separately.
             if ([pkg isEqualToString:@"mobilesubstrate"] || [pkg isEqualToString:@"firmware"])
                 continue;
@@ -1584,7 +1480,7 @@ void jailbreak()
         }
         if (pkgsToRepair.count > 0) {
             LOG(@"(Re-)Extracting \"%@\".", pkgsToRepair);
-            NSArray *debsToRepair = debsForPkgs(pkgsToRepair);
+            auto const debsToRepair = debsForPkgs(pkgsToRepair);
             _assert(debsToRepair.count == pkgsToRepair.count, message, true);
             _assert(extractDebs(debsToRepair), message, true);
             [debsToInstall addObjectsFromArray:debsToRepair];
@@ -1614,13 +1510,13 @@ void jailbreak()
         
         PROGRESS(NSLocalizedString(@"Injecting trust cache...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to inject trust cache.", nil));
-        NSArray *resources = [NSArray arrayWithContentsOfFile:@"/usr/share/jailbreak/injectme.plist"];
+        auto resources = [NSArray arrayWithContentsOfFile:@"/usr/share/jailbreak/injectme.plist"];
         // If substrate is already running but was broken, skip injecting again
         if (!skipSubstrate) {
             resources = [@[@"/usr/libexec/substrate"] arrayByAddingObjectsFromArray:resources];
         }
         resources = [@[@"/usr/libexec/substrated"] arrayByAddingObjectsFromArray:resources];
-        for (NSString *file in resources) {
+        for (id file in resources) {
             if (![toInjectToTrustCache containsObject:file]) {
                 [toInjectToTrustCache addObject:file];
             }
@@ -1659,7 +1555,7 @@ void jailbreak()
         _assert(ensure_file("/var/lib/dpkg/available", 0, 0644), message, true);
         
         // Make sure firmware-sbin package is not corrupted.
-        NSString *file = [NSString stringWithContentsOfFile:@"/var/lib/dpkg/info/firmware-sbin.list" encoding:NSUTF8StringEncoding error:nil];
+        auto file = [NSString stringWithContentsOfFile:@"/var/lib/dpkg/info/firmware-sbin.list" encoding:NSUTF8StringEncoding error:nil];
         if ([file containsString:@"/sbin/fstyp"] || [file containsString:@"\n\n"]) {
             // This is not a stock file for iOS11+
             file = [file stringByReplacingOccurrencesOfString:@"/sbin/fstyp\n" withString:@""];
@@ -1731,7 +1627,7 @@ void jailbreak()
             _assert(injectTrustCache(toInjectToTrustCache, GETOFFSET(trustcache), pmap_load_trust_cache) == ERR_SUCCESS, message, true);
             [toInjectToTrustCache removeAllObjects];
             injectedToTrustCache = true;
-            NSString *dpkg_deb = debForPkg(@"dpkg");
+            auto const dpkg_deb = debForPkg(@"dpkg");
             _assert(installDeb(dpkg_deb.UTF8String, true), message, true);
             [debsToInstall removeObject:dpkg_deb];
         }
@@ -1739,7 +1635,7 @@ void jailbreak()
         if (needStrap || !pkgIsConfigured("firmware")) {
             LOG("Extracting Cydia...");
             if (access("/usr/libexec/cydia/firmware.sh", F_OK) != ERR_SUCCESS || !pkgIsConfigured("cydia")) {
-                NSArray *fwDebs = debsForPkgs(@[@"cydia", @"cydia-lproj", @"darwintools", @"uikittools", @"system-cmds"]);
+                auto const fwDebs = debsForPkgs(@[@"cydia", @"cydia-lproj", @"darwintools", @"uikittools", @"system-cmds"]);
                 _assert(fwDebs != nil, message, true);
                 _assert(installDebs(fwDebs, true), message, true);
                 rv = _system("/usr/libexec/cydia/firmware.sh");
@@ -1764,9 +1660,9 @@ void jailbreak()
             (pkgIsInstalled("apt7-key") && compareInstalledVersion("apt7-key", "lt", "1:0"))
             ) {
             LOG("Installing newer version of apt7");
-            NSArray *apt7debs = debsForPkgs(@[@"apt7", @"apt7-key", @"apt7-lib"]);
+            auto const apt7debs = debsForPkgs(@[@"apt7", @"apt7-key", @"apt7-lib"]);
             _assert(apt7debs != nil && apt7debs.count == 3, message, true);
-            for (NSString *deb in apt7debs) {
+            for (id deb in apt7debs) {
                 if (![debsToInstall containsObject:deb]) {
                     [debsToInstall addObject:deb];
                 }
@@ -1780,22 +1676,22 @@ void jailbreak()
 
         _assert(ensure_directory("/etc/apt/undecimus", 0, 0755), message, true);
         clean_file("/etc/apt/sources.list.d/undecimus.list");
-        const char *listPath = "/etc/apt/undecimus/undecimus.list";
-        NSString *listContents = @"deb file:///var/lib/undecimus/apt ./\n";
-        NSString *existingList = [NSString stringWithContentsOfFile:@(listPath) encoding:NSUTF8StringEncoding error:nil];
+        auto const listPath = "/etc/apt/undecimus/undecimus.list";
+        auto const listContents = @"deb file:///var/lib/undecimus/apt ./\n";
+        auto const existingList = [NSString stringWithContentsOfFile:@(listPath) encoding:NSUTF8StringEncoding error:nil];
         if (![listContents isEqualToString:existingList]) {
             clean_file(listPath);
             [listContents writeToFile:@(listPath) atomically:NO encoding:NSUTF8StringEncoding error:nil];
         }
         init_file(listPath, 0, 0644);
-        NSString *repoPath = pathForResource(@"apt");
+        auto const repoPath = pathForResource(@"apt");
         _assert(repoPath != nil, message, true);
         ensure_directory("/var/lib/undecimus", 0, 0755);
         ensure_symlink([repoPath UTF8String], "/var/lib/undecimus/apt");
         if (!pkgIsConfigured("apt1.4") || !aptUpdate()) {
-            NSArray *aptNeeded = resolveDepsForPkg(@"apt1.4", false);
+            auto const aptNeeded = resolveDepsForPkg(@"apt1.4", false);
             _assert(aptNeeded != nil && aptNeeded.count > 0, message, true);
-            NSArray *aptDebs = debsForPkgs(aptNeeded);
+            auto const aptDebs = debsForPkgs(aptNeeded);
             _assert(installDebs(aptDebs, true), message, true);
             _assert(aptUpdate(), message, true);
         }
@@ -1833,7 +1729,7 @@ void jailbreak()
             }
         }
         
-        NSData *file_data = [[NSString stringWithFormat:@"%f\n", kCFCoreFoundationVersionNumber] dataUsingEncoding:NSUTF8StringEncoding];
+        auto const file_data = [[NSString stringWithFormat:@"%f\n", kCFCoreFoundationVersionNumber] dataUsingEncoding:NSUTF8StringEncoding];
         if (![[NSData dataWithContentsOfFile:@"/.installed_unc0ver"] isEqual:file_data]) {
             _assert(clean_file("/.installed_unc0ver"), message, true);
             _assert(create_file_data("/.installed_unc0ver", 0, 0644, file_data), message, true);
@@ -1898,13 +1794,9 @@ void jailbreak()
     UPSTAGE();
     
     {
-        char *targettype = NULL;
-        size_t size = 0;
-        _assert(sysctlbyname("hw.targettype", NULL, &size, NULL, 0) == ERR_SUCCESS, message, true);
-        targettype = malloc(size);
+        auto targettype = sysctlWithName("hw.targettype");
         _assert(targettype != NULL, message, true);
-        _assert(sysctlbyname("hw.targettype", targettype, &size, NULL, 0) == ERR_SUCCESS, message, true);
-        NSString *jetsamFile = [NSString stringWithFormat:@"/System/Library/LaunchDaemons/com.apple.jetsamproperties.%s.plist", targettype];
+        auto const jetsamFile = [NSString stringWithFormat:@"/System/Library/LaunchDaemons/com.apple.jetsamproperties.%s.plist", targettype];
         SafeFreeNULL(targettype);
         
         if (prefs->increase_memory_limit) {
@@ -1998,8 +1890,8 @@ void jailbreak()
             
             PROGRESS(NSLocalizedString(@"Installing Cydia...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to install Cydia.", nil));
-            NSString *cydiaVer = versionOfPkg(@"cydia");
-            _assert(cydiaVer!=nil, message, true);
+            auto const cydiaVer = versionOfPkg(@"cydia");
+            _assert(cydiaVer != nil, message, true);
             _assert(aptInstall(@[@"--reinstall", [@"cydia" stringByAppendingFormat:@"=%@", cydiaVer]]), message, true);
             prefs->install_cydia = false;
             prefs->run_uicache = true;
@@ -2170,7 +2062,7 @@ out:
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
-    prefs_t *prefs = copy_prefs();
+    auto prefs = copy_prefs();
     if (!jailbreakSupported()) {
         STATUS(NSLocalizedString(@"Unsupported", nil), false, true);
     } else if (prefs->restore_rootfs) {
@@ -2187,7 +2079,7 @@ out:
     [super viewDidLoad];
     _canExit = YES;
     // Do any additional setup after loading the view, typically from a nib.
-    prefs_t *prefs = copy_prefs();
+    auto prefs = copy_prefs();
     if (prefs->hide_log_window) {
         _outputView.hidden = YES;
         _outputView = nil;
