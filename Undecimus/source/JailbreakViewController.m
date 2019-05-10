@@ -2030,14 +2030,15 @@ out:
 - (IBAction)tappedOnJailbreak:(id)sender
 {
     STATUS(NSLocalizedString(@"Jailbreak", nil), false, false);
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0ul), ^{
+    auto const block = ^(void) {
         _assert(bundledResources != nil, NSLocalizedString(@"Bundled Resources version missing.", nil), true);
         if (!jailbreakSupported()) {
             STATUS(NSLocalizedString(@"Unsupported", nil), false, true);
             return;
         }
         jailbreak();
-    });
+    };
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0ul), block);
 }
 
 - (void)viewWillAppear:(BOOL)animated {
