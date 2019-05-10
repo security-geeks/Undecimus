@@ -622,7 +622,7 @@ void jailbreak()
         offset_options = GETOFFSET(unrestrict-options);
         if (!offset_options) {
             offset_options = kmem_alloc(sizeof(kptr_t));
-            wk64(offset_options, 0);
+            wk64(offset_options, KPTR_NULL);
             SETOFFSET(unrestrict-options, offset_options);
         }
         if (prefs->enable_get_task_allow) {
