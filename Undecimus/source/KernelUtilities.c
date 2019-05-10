@@ -441,7 +441,7 @@ kptr_t kstralloc(const char *str) {
 
 void kstrfree(kptr_t ptr) {
     if (KERN_POINTER_VALID(ptr)) {
-        auto size = kstrlen(ptr);
+        auto size = kstrlen(ptr) + 1;
         kmem_free(ptr, size);
     }
 }
