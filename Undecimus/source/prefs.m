@@ -120,9 +120,8 @@ void register_default_prefs() {
 
 void repair_prefs() {
     prefs_t *prefs = copy_prefs();
-    if (!supportsExploit(prefs->exploit)) {
-        [userDefaults removeObjectForKey:@K_EXPLOIT];
-    }
+    if (!supportsExploit(prefs->exploit)) prefs->exploit = (int)recommendedJailbreakSupport();
+    set_prefs(prefs);
     release_prefs(&prefs);
 }
 
