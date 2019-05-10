@@ -115,9 +115,6 @@ extern int maxStage;
 
 static NSString *bundledResources = nil;
 
-#define MAX_KASLR_SLIDE 0x21000000
-#define STATIC_KERNEL_BASE_ADDRESS 0xfffffff007004000
-
 static void writeTestFile(const char *file) {
     _assert(create_file(file, 0, 0644), message, true);
     _assert(clean_file(file), message, true);
@@ -478,36 +475,20 @@ void jailbreak()
         SETMESSAGE(NSLocalizedString(@"Failed to exploit kernel.", nil));
         auto exploit_success = NO;
         auto persisted_kernel_task_port = TASK_NULL;
-        struct task_dyld_info dyld_info = { 0 };
-        mach_msg_type_number_t count = TASK_DYLD_INFO_COUNT;
-        auto persisted_cache_blob = KPTR_NULL;
+        auto persisted_kernel_base = KPTR_NULL;
         auto persisted_kernel_slide = KPTR_NULL;
         myHost = mach_host_self();
         _assert(MACH_PORT_VALID(myHost), message, true);
         myOriginalHost = myHost;
-        auto pid = 0;
-        if ((task_for_pid(mach_task_self(), 0, &persisted_kernel_task_port) == KERN_SUCCESS ||
-            host_get_special_port(myHost, 0, 4, &persisted_kernel_task_port) == KERN_SUCCESS) &&
-            MACH_PORT_VALID(persisted_kernel_task_port) &&
-            pid_for_task(persisted_kernel_task_port, &pid) == KERN_SUCCESS && pid == 0 &&
-            task_info(persisted_kernel_task_port, TASK_DYLD_INFO, (task_info_t)&dyld_info, &count) == KERN_SUCCESS &&
-            KERN_POINTER_VALID((persisted_cache_blob = dyld_info.all_image_info_addr)) &&
-            (persisted_kernel_slide = dyld_info.all_image_info_size) != -1) {
-            prepare_for_rw_with_fake_tfp0(persisted_kernel_task_port);
-            kernel_base = STATIC_KERNEL_BASE_ADDRESS + persisted_kernel_slide;
+        if (restore_kernel_task_port(&persisted_kernel_task_port) &&
+            restore_kernel_base(persisted_kernel_task_port, &persisted_kernel_base, &persisted_kernel_slide)) {
+            tfp0 = persisted_kernel_task_port;
+            kernel_base = persisted_kernel_base;
             kernel_slide = persisted_kernel_slide;
-
-            if (persisted_cache_blob != STATIC_KERNEL_BASE_ADDRESS + persisted_kernel_slide) {
-                auto blob_size = rk32(persisted_cache_blob + offsetof(struct cache_blob, size));
-                LOG("Restoring persisted offsets cache");
-                auto blob = create_cache_blob(blob_size);
-                _assert(rkbuffer(persisted_cache_blob, blob, blob_size), message, true);
-                import_cache_blob(blob);
-                SafeFreeNULL(blob);
-                _assert(GETOFFSET(kernel_slide) == persisted_kernel_slide, message, true);
+            if (restore_kernel_offset_cache(persisted_kernel_task_port)) {
+                LOG("Restored kernel offset cache.");
                 found_offsets = true;
             }
-            
             usedPersistedKernelTaskPort = YES;
             exploit_success = YES;
         } else {
@@ -538,7 +519,6 @@ void jailbreak()
                 }
                 case voucher_swap_exploit: {
                     voucher_swap();
-                    prepare_for_rw_with_fake_tfp0(kernel_task_port);
                     if (MACH_PORT_VALID(tfp0) &&
                         kernel_slide_init() &&
                         kernel_slide != -1 &&

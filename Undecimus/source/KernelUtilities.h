@@ -150,4 +150,9 @@ kptr_t get_sandbox(kptr_t cr_label);
 bool entitleProcessWithPid(pid_t pid, const char *key, kptr_t val);
 bool removeMemoryLimit(void);
 
+bool restore_kernel_task_port(task_t *out_kernel_task_port);
+bool restore_kernel_base(task_t kernel_task_port, uint64_t *out_kernel_base, uint64_t *out_kernel_slide);
+bool restore_kernel_offset_cache(task_t kernel_task_port);
+bool restore_file_offset_cache(const char *offset_cache_file_path, kptr_t *out_kernel_base, uint64_t *out_kernel_slide);
+
 #endif /* kutils_h */

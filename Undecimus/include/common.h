@@ -18,19 +18,14 @@ extern void NSLog(CFStringRef, ...);
 
 #define SafeFree(x) do { if (x) free(x); } while(false)
 #define SafeFreeNULL(x) do { SafeFree(x); (x) = NULL; } while(false)
+#define CFSafeRelease(x) do { if (x) CFRelease(x); } while(false)
+#define CFSafeReleaseNULL(x) do { CFSafeRelease(x); (x) = NULL; } while(false)
 
 #define kCFCoreFoundationVersionNumber_iOS_12_0 1535.12
 #define kCFCoreFoundationVersionNumber_iOS_11_3 1452.23
 #define kCFCoreFoundationVersionNumber_iOS_11_0 1443.00
 
 #define auto __auto_type
-
-extern uint64_t offset_options;
-#define OPT(x) (offset_options?((rk64(offset_options) & OPT_ ##x)?true:false):false)
-#define SETOPT(x) (offset_options?wk64(offset_options, rk64(offset_options) | OPT_ ##x):0)
-#define UNSETOPT(x) (offset_options?wk64(offset_options, rk64(offset_options) & ~OPT_ ##x):0)
-#define OPT_GET_TASK_ALLOW (1<<0)
-#define OPT_CS_DEBUGGED (1<<1)
 
 #define ADDR                 "0x%016llx"
 #define MACH_HEADER_MAGIC    MH_MAGIC_64
@@ -41,6 +36,15 @@ typedef struct load_command mach_lc_t;
 typedef uint64_t kptr_t;
 #define KPTR_NULL ((kptr_t) 0)
 #define KERN_POINTER_VALID(val) ((val) >= 0xffff000000000000 && (val) != 0xffffffffffffffff)
+#define MAX_KASLR_SLIDE 0x21000000
+#define STATIC_KERNEL_BASE_ADDRESS 0xfffffff007004000
+
+extern kptr_t offset_options;
+#define OPT(x) (offset_options?((rk64(offset_options) & OPT_ ##x)?true:false):false)
+#define SETOPT(x) (offset_options?wk64(offset_options, rk64(offset_options) | OPT_ ##x):0)
+#define UNSETOPT(x) (offset_options?wk64(offset_options, rk64(offset_options) & ~OPT_ ##x):0)
+#define OPT_GET_TASK_ALLOW (1<<0)
+#define OPT_CS_DEBUGGED (1<<1)
 
 #define SIZE_NULL ((size_t) 0)
 

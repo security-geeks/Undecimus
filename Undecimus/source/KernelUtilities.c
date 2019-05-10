@@ -1261,3 +1261,188 @@ bool removeMemoryLimit() {
     }
     return removeMemoryLimit;
 }
+
+bool restore_kernel_task_port(task_t *out_kernel_task_port) {
+    auto restored_kernel_task_port = false;
+    auto kr = KERN_FAILURE;
+    auto kernel_task_port = (task_t *)NULL;
+    auto host = HOST_NULL;
+    if (out_kernel_task_port == NULL) goto out;
+    kernel_task_port = (task_t *)malloc(sizeof(task_t *));
+    if (kernel_task_port == NULL) goto out;
+    bzero(kernel_task_port, sizeof(task_t));
+    host = mach_host_self();
+    if (!MACH_PORT_VALID(host)) goto out;
+    kr = task_for_pid(mach_task_self(), 0, kernel_task_port);
+    if (kr != KERN_SUCCESS) kr = host_get_special_port(host, HOST_LOCAL_NODE, 4, kernel_task_port);
+    if (kr != KERN_SUCCESS) goto out;
+    if (!MACH_PORT_VALID(*kernel_task_port)) goto out;
+    *out_kernel_task_port = *kernel_task_port;
+    restored_kernel_task_port = true;
+out:
+    SafeFreeNULL(kernel_task_port);
+    if (MACH_PORT_VALID(host)) mach_port_deallocate(mach_task_self(), host); host = HOST_NULL;
+    return restored_kernel_task_port;
+}
+
+bool restore_kernel_base(task_t kernel_task_port, uint64_t *out_kernel_base, uint64_t *out_kernel_slide) {
+    auto restored_kernel_base = false;
+    auto kr = KERN_FAILURE;
+    auto kernel_task_base = (kptr_t *)NULL;
+    auto kernel_task_slide = (uint64_t *)NULL;
+    auto task_dyld_info = (struct task_dyld_info *)NULL;
+    auto task_dyld_info_count = (mach_msg_type_number_t *)NULL;
+    if (out_kernel_base == NULL || out_kernel_slide == NULL) goto out;
+    kernel_task_base = (kptr_t *)malloc(sizeof(kptr_t));
+    if (kernel_task_base == NULL) goto out;
+    bzero(kernel_task_base, sizeof(kptr_t));
+    kernel_task_slide = (uint64_t *)malloc(sizeof(uint64_t));
+    if (kernel_task_slide == NULL) goto out;
+    bzero(kernel_task_slide, sizeof(uint64_t));
+    task_dyld_info = (struct task_dyld_info *)malloc(sizeof(struct task_dyld_info));
+    if (task_dyld_info == NULL) goto out;
+    bzero(task_dyld_info, sizeof(struct task_dyld_info));
+    task_dyld_info_count = (mach_msg_type_number_t *)malloc(sizeof(mach_msg_type_number_t));
+    if (task_dyld_info_count == NULL) goto out;
+    bzero(task_dyld_info_count, sizeof(mach_msg_type_number_t));
+    *task_dyld_info_count = TASK_DYLD_INFO_COUNT;
+    kr = task_info(kernel_task_port, TASK_DYLD_INFO, (task_info_t)task_dyld_info, task_dyld_info_count);
+    if (kr != KERN_SUCCESS) goto out;
+    if (task_dyld_info->all_image_info_size > MAX_KASLR_SLIDE) goto out;
+    *kernel_task_slide = task_dyld_info->all_image_info_size;
+    *kernel_task_base = *kernel_task_slide + STATIC_KERNEL_BASE_ADDRESS;
+    *out_kernel_base = *kernel_task_base;
+    *out_kernel_slide = *kernel_task_slide;
+    restored_kernel_base = true;
+out:
+    SafeFreeNULL(kernel_task_base);
+    SafeFreeNULL(kernel_task_slide);
+    SafeFreeNULL(task_dyld_info);
+    SafeFreeNULL(task_dyld_info_count);
+    return restored_kernel_base;
+}
+
+bool restore_kernel_offset_cache(task_t kernel_task_port) {
+    auto restored_kernel_offset_cache = false;
+    auto kr = KERN_FAILURE;
+    auto task_dyld_info = (struct task_dyld_info *)NULL;
+    auto task_dyld_info_count = (mach_msg_type_number_t *)NULL;
+    auto offset_cache_addr = KPTR_NULL;
+    auto offset_cache_size_addr = KPTR_NULL;
+    auto offset_cache_size = (size_t *)NULL;
+    auto offset_cache_blob = (struct cache_blob *)NULL;
+    task_dyld_info = (struct task_dyld_info *)malloc(sizeof(struct task_dyld_info));
+    if (task_dyld_info == NULL) goto out;
+    bzero(task_dyld_info, sizeof(struct task_dyld_info));
+    task_dyld_info_count = (mach_msg_type_number_t *)malloc(sizeof(mach_msg_type_number_t));
+    if (task_dyld_info_count == NULL) goto out;
+    bzero(task_dyld_info_count, sizeof(mach_msg_type_number_t));
+    offset_cache_size = (size_t *)malloc(sizeof(size_t));
+    if (offset_cache_size == NULL) goto out;
+    bzero(offset_cache_size, sizeof(size_t));
+    *task_dyld_info_count = TASK_DYLD_INFO_COUNT;
+    kr = task_info(kernel_task_port, TASK_DYLD_INFO, (task_info_t)task_dyld_info, task_dyld_info_count);
+    if (kr != KERN_SUCCESS) goto out;
+    if (!KERN_POINTER_VALID(task_dyld_info->all_image_info_addr)) goto out;
+    offset_cache_addr = task_dyld_info->all_image_info_addr;
+    offset_cache_size_addr = offset_cache_addr + offsetof(struct cache_blob, size);
+    if (!rkbuffer(offset_cache_size_addr, offset_cache_size, sizeof(*offset_cache_size))) goto out;
+    offset_cache_blob = create_cache_blob(*offset_cache_size);
+    if (offset_cache_blob == NULL) goto out;
+    if (!rkbuffer(offset_cache_addr, offset_cache_blob, *offset_cache_size)) goto out;
+    import_cache_blob(offset_cache_blob);
+    if (KERN_POINTER_VALID(get_offset("OSBooleanTrue"))) set_offset("OSBooleanTrue", ReadKernel64(get_offset("OSBooleanTrue")));
+    if (KERN_POINTER_VALID(get_offset("OSBooleanTrue"))) set_offset("OSBooleanFalse", get_offset("OSBooleanTrue") + sizeof(void *));
+    restored_kernel_offset_cache = true;
+out:
+    SafeFreeNULL(task_dyld_info);
+    SafeFreeNULL(task_dyld_info_count);
+    SafeFreeNULL(offset_cache_size);
+    SafeFreeNULL(offset_cache_blob);
+    return restored_kernel_offset_cache;
+}
+
+bool restore_file_offset_cache(const char *offset_cache_file_path, kptr_t *out_kernel_base, uint64_t *out_kernel_slide) {
+    auto restored_file_offset_cache = false;
+    auto offset_cache_file_name = (CFStringRef)NULL;
+    auto offset_cache_file_url = (CFURLRef)NULL;
+    auto offset_cache_file_data = (CFDataRef)NULL;
+    auto offset_cache_property_list = (CFPropertyListRef)NULL;
+    auto status = (Boolean)false;
+    auto offset_kernel_base = KPTR_NULL;
+    auto offset_kernel_slide = KPTR_NULL;
+    if (offset_cache_file_path == NULL || out_kernel_base == NULL || out_kernel_slide == NULL) goto out;
+    offset_cache_file_name = CFStringCreateWithCStringNoCopy(kCFAllocatorDefault, offset_cache_file_path, kCFStringEncodingUTF8, kCFAllocatorDefault);
+    if (offset_cache_file_name == NULL) goto out;
+    offset_cache_file_url = CFURLCreateWithFileSystemPath(kCFAllocatorDefault, offset_cache_file_name, kCFURLPOSIXPathStyle, false);
+    if (offset_cache_file_url == NULL) goto out;
+    status = CFURLCreateDataAndPropertiesFromResource(kCFAllocatorDefault, offset_cache_file_url, &offset_cache_file_data, NULL, NULL, NULL);
+    if (!status) goto out;
+    offset_cache_property_list = CFPropertyListCreateWithData(kCFAllocatorDefault, offset_cache_file_data, kCFPropertyListImmutable, NULL, NULL);
+    if (offset_cache_property_list == NULL) goto out;
+    if (CFGetTypeID(offset_cache_property_list) != CFDictionaryGetTypeID()) goto out;
+#define restore_offset(entry_name, out_offset) do { \
+    auto value = CFDictionaryGetValue(offset_cache_property_list, CFSTR(entry_name)); \
+    if (value == NULL) break; \
+    auto string = CFStringGetCStringPtr((CFStringRef)value, kCFStringEncodingUTF8); \
+    if (string == NULL) break; \
+    auto offset = strtoull(string, NULL, 16); \
+    if (!KERN_POINTER_VALID(offset)) break; \
+    out_offset = offset; \
+} while (false)
+#define restore_and_set_offset(entry_name, offset_name) do { \
+    auto restored_offset = KPTR_NULL; \
+    restore_offset(entry_name, restored_offset); \
+    set_offset(offset_name, restored_offset); \
+} while (false)
+    restore_offset("KernelBase", offset_kernel_base);
+    restore_offset("KernelSlide", offset_kernel_slide);
+    restore_and_set_offset("TrustChain", "trustcache");
+    restore_and_set_offset("OSBooleanTrue", "OSBooleanTrue");
+    restore_and_set_offset("OSBooleanFalse", "OSBooleanFalse");
+    restore_and_set_offset("OSUnserializeXML", "osunserializexml");
+    restore_and_set_offset("Smalloc", "smalloc");
+    restore_and_set_offset("AddRetGadget", "add_x0_x0_0x40_ret");
+    restore_and_set_offset("ZoneMapOffset", "zone_map_ref");
+    restore_and_set_offset("VfsContextCurrent", "vfs_context_current");
+    restore_and_set_offset("VnodeLookup", "vnode_lookup");
+    restore_and_set_offset("VnodePut", "vnode_put");
+    restore_and_set_offset("KernelTask", "kernel_task");
+    restore_and_set_offset("Shenanigans", "shenanigans");
+    restore_and_set_offset("LckMtxLock", "lck_mtx_lock");
+    restore_and_set_offset("LckMtxUnlock", "lck_mtx_unlock");
+    restore_and_set_offset("VnodeGetSnapshot", "vnode_get_snapshot");
+    restore_and_set_offset("FsLookupSnapshotMetadataByNameAndReturnName", "fs_lookup_snapshot_metadata_by_name_and_return_name");
+    restore_and_set_offset("PmapLoadTrustCache", "pmap_load_trust_cache");
+    restore_and_set_offset("APFSJhashGetVnode", "apfs_jhash_getvnode");
+    restore_and_set_offset("PacizaPointerL2TPDomainModuleStart", "paciza_pointer__l2tp_domain_module_start");
+    restore_and_set_offset("PacizaPointerL2TPDomainModuleStop", "paciza_pointer__l2tp_domain_module_stop");
+    restore_and_set_offset("L2TPDomainInited", "l2tp_domain_inited");
+    restore_and_set_offset("SysctlNetPPPL2TP", "sysctl__net_ppp_l2tp");
+    restore_and_set_offset("SysctlUnregisterOid", "sysctl_unregister_oid");
+    restore_and_set_offset("MovX0X4BrX5", "mov_x0_x4__br_x5");
+    restore_and_set_offset("MovX9X0BrX1", "mov_x9_x0__br_x1");
+    restore_and_set_offset("MovX10X3BrX6", "mov_x10_x3__br_x6");
+    restore_and_set_offset("KernelForgePaciaGadget", "kernel_forge_pacia_gadget");
+    restore_and_set_offset("KernelForgePacdaGadget", "kernel_forge_pacda_gadget");
+    restore_and_set_offset("IOUserClientVtable", "IOUserClient__vtable");
+    restore_and_set_offset("IORegistryEntryGetRegistryEntryID", "IORegistryEntry__getRegistryEntryID");
+    restore_and_set_offset("ProcFind", "proc_find");
+    restore_and_set_offset("ProcRele", "proc_rele");
+    restore_and_set_offset("ExtensionCreateFile", "extension_create_file");
+    restore_and_set_offset("ExtensionAdd", "extension_add");
+    restore_and_set_offset("ExtensionRelease", "extension_release");
+    restore_and_set_offset("Sfree", "sfree");
+    restore_and_set_offset("Sstrdup", "sstrdup");
+    restore_and_set_offset("Strlen", "strlen");
+#undef restore_offset
+#undef restore_and_set_offset
+    *out_kernel_base = offset_kernel_base;
+    *out_kernel_slide = offset_kernel_slide;
+    restored_file_offset_cache = true;
+out:
+    CFSafeReleaseNULL(offset_cache_file_url);
+    CFSafeReleaseNULL(offset_cache_file_data);
+    CFSafeReleaseNULL(offset_cache_property_list);
+    return restored_file_offset_cache;
+}
