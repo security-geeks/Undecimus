@@ -717,7 +717,7 @@ void jailbreak()
             LOG("Detected corrupted shenanigans pointer.");
             Shenanigans = kernelCredAddr;
         }
-        WriteKernel64(GETOFFSET(shenanigans), ShenanigansPatch);
+        _assert(WriteKernel64(GETOFFSET(shenanigans), ShenanigansPatch), message, true);
         myCredAddr = kernelCredAddr;
         myOriginalCredAddr = give_creds_to_process_at_addr(myProcAddr, myCredAddr);
         LOG("myOriginalCredAddr = " ADDR, myOriginalCredAddr);
@@ -735,8 +735,8 @@ void jailbreak()
         _assert(init_kexecute(), message, true);
         LOG("Successfully initialized kexecute.");
         LOG("Platformizing...");
-        set_platform_binary(myProcAddr, true);
-        set_cs_platform_binary(myProcAddr, true);
+        _assert(set_platform_binary(myProcAddr, true), message, true);
+        _assert(set_cs_platform_binary(myProcAddr, true), message, true);
         LOG("Successfully initialized jailbreak.");
     }
     
@@ -1989,8 +1989,8 @@ out:
     LOG("Deinitializing kexecute...");
     term_kexecute();
     LOG("Unplatformizing...");
-    set_platform_binary(myProcAddr, false);
-    set_cs_platform_binary(myProcAddr, false);
+    _assert(set_platform_binary(myProcAddr, false), message, true);
+    _assert(set_cs_platform_binary(myProcAddr, false), message, true);
     LOG("Sandboxing...");
     myCredAddr = myOriginalCredAddr;
     _assert(give_creds_to_process_at_addr(myProcAddr, myCredAddr) == kernelCredAddr, message, true);
@@ -1998,7 +1998,7 @@ out:
     _assert(setuid(myUid) == ERR_SUCCESS, message, true);
     _assert(getuid() == myUid, message, true);
     LOG("Restoring shenanigans pointer...");
-    WriteKernel64(GETOFFSET(shenanigans), Shenanigans);
+    _assert(WriteKernel64(GETOFFSET(shenanigans), Shenanigans), message, true);
     LOG("Deallocating ports...");
     _assert(mach_port_deallocate(mach_task_self(), myHost) == KERN_SUCCESS, message, true);
     myHost = HOST_NULL;

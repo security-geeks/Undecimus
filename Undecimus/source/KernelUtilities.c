@@ -77,44 +77,65 @@ bool found_offsets = false;
 kptr_t cached_task_self_addr = KPTR_NULL;
 kptr_t task_self_addr()
 {
-    if (!KERN_POINTER_VALID(cached_task_self_addr)) {
-        cached_task_self_addr = have_kmem_read() && found_offsets ? get_address_of_port(getpid(), mach_task_self()) : find_port_address(mach_task_self(), MACH_MSG_TYPE_COPY_SEND);
-        LOG("task self: " ADDR, cached_task_self_addr);
-    }
+    auto ret = KPTR_NULL;
+    if (KERN_POINTER_VALID((ret = cached_task_self_addr))) goto out;
+    cached_task_self_addr = have_kmem_read() && found_offsets ? get_address_of_port(getpid(), mach_task_self()) : find_port_address(mach_task_self(), MACH_MSG_TYPE_COPY_SEND);
+out:;
     return cached_task_self_addr;
 }
 
 kptr_t ipc_space_kernel()
 {
-    return ReadKernel64(task_self_addr() + koffset(KSTRUCT_OFFSET_IPC_PORT_IP_RECEIVER));
+    auto ret = KPTR_NULL;
+    auto const task_self = task_self_addr();
+    if (!KERN_POINTER_VALID(task_self)) goto out;
+    auto const ipc_space = ReadKernel64(task_self + koffset(KSTRUCT_OFFSET_IPC_PORT_IP_RECEIVER));
+    if (!KERN_POINTER_VALID(ipc_space)) goto out;
+    ret = ipc_space;
+out:;
+    return ret;
 }
 
 kptr_t current_thread()
 {
-    auto thread = mach_thread_self();
-    auto thread_port = have_kmem_read() && found_offsets ? get_address_of_port(getpid(), thread) : find_port_address(thread, MACH_MSG_TYPE_COPY_SEND);
-    mach_port_deallocate(mach_task_self(), thread);
-    thread = THREAD_NULL;
-    return ReadKernel64(thread_port + koffset(KSTRUCT_OFFSET_IPC_PORT_IP_KOBJECT));
+    auto ret = KPTR_NULL;
+    auto thread = THREAD_NULL;
+    thread = mach_thread_self();
+    if (!MACH_PORT_VALID(thread)) goto out;
+    auto const thread_port = have_kmem_read() && found_offsets ? get_address_of_port(getpid(), thread) : find_port_address(thread, MACH_MSG_TYPE_COPY_SEND);
+    if (!KERN_POINTER_VALID(thread_port)) goto out;
+    auto const thread_addr = ReadKernel64(thread_port + koffset(KSTRUCT_OFFSET_IPC_PORT_IP_KOBJECT));
+    if (!KERN_POINTER_VALID(thread_addr)) goto out;
+    ret = thread_addr;
+out:;
+    if (MACH_PORT_VALID(thread)) mach_port_deallocate(mach_task_self(), thread); thread = THREAD_NULL;
+    return ret;
 }
 
 kptr_t find_kernel_base()
 {
-    auto host = mach_host_self();
-    auto hostport_addr = have_kmem_read() && found_offsets ? get_address_of_port(getpid(), host) : find_port_address(host, MACH_MSG_TYPE_COPY_SEND);
-    mach_port_deallocate(mach_task_self(), host);
-    auto realhost = ReadKernel64(hostport_addr + koffset(KSTRUCT_OFFSET_IPC_PORT_IP_KOBJECT));
-
+    auto ret = KPTR_NULL;
+    auto host = HOST_NULL;
+    host = mach_host_self();
+    if (!MACH_PORT_VALID(host)) goto out;
+    auto const hostport_addr = have_kmem_read() && found_offsets ? get_address_of_port(getpid(), host) : find_port_address(host, MACH_MSG_TYPE_COPY_SEND);
+    if (!KERN_POINTER_VALID(hostport_addr)) goto out;
+    auto const realhost = ReadKernel64(hostport_addr + koffset(KSTRUCT_OFFSET_IPC_PORT_IP_KOBJECT));
+    if (!KERN_POINTER_VALID(realhost)) goto out;
     auto base = realhost & ~0xfffULL;
     // walk down to find the magic:
     for (auto i = 0; i < 0x10000; i++) {
         if (ReadKernel32(base) == MACH_HEADER_MAGIC) {
-            return base;
+            ret = base;
+            goto out;
         }
         base -= 0x1000;
     }
-    return 0;
+out:;
+    if (MACH_PORT_VALID(host)) mach_port_deallocate(mach_task_self(), host); host = HOST_NULL;
+    return ret;
 }
+
 mach_port_t fake_host_priv_port = MACH_PORT_NULL;
 
 // build a fake host priv port
@@ -159,146 +180,108 @@ mach_port_t fake_host_priv()
 }
 
 kptr_t get_kernel_proc_struct_addr() {
-    static auto kernproc = KPTR_NULL;
-    if (!KERN_POINTER_VALID(kernproc)) {
-        kernproc = ReadKernel64(ReadKernel64(GETOFFSET(kernel_task)) + koffset(KSTRUCT_OFFSET_TASK_BSD_INFO));
-        LOG("kernproc = " ADDR, kernproc);
-        if (!KERN_POINTER_VALID(kernproc)) {
-            LOG("failed to get kernproc!");
-            return 0;
-        }
-    }
-    return kernproc;
+    auto ret = KPTR_NULL;
+    auto const task = ReadKernel64(GETOFFSET(kernel_task));
+    if (!KERN_POINTER_VALID(task)) goto out;
+    auto const bsd_info = ReadKernel64(task + koffset(KSTRUCT_OFFSET_TASK_BSD_INFO));
+    if (!KERN_POINTER_VALID(bsd_info)) goto out;
+    ret = bsd_info;
+out:;
+    return ret;
 }
 
-void iterate_proc_list(void (^handler)(kptr_t, pid_t, int *)) {
-    assert(handler != NULL);
-    auto proc = get_kernel_proc_struct_addr();
-    if (!KERN_POINTER_VALID(proc)) {
-        LOG("failed to get proc!");
-        return;
-    }
+bool iterate_proc_list(void (^handler)(kptr_t, pid_t, int *)) {
+    auto ret = false;
+    if (handler == NULL) goto out;
     auto iterate = true;
-    while (proc && iterate) {
-        auto pid = ReadKernel32(proc + koffset(KSTRUCT_OFFSET_PROC_PID));
+    auto proc = get_kernel_proc_struct_addr();
+    if (!KERN_POINTER_VALID(proc)) goto out;
+    while (KERN_POINTER_VALID(proc) && iterate) {
+        auto const pid = ReadKernel32(proc + koffset(KSTRUCT_OFFSET_PROC_PID));
         handler(proc, pid, &iterate);
-        if (!iterate) {
-            break;
-        }
-        proc = ReadKernel64(proc + koffset(KSTRUCT_OFFSET_PROC_P_LIST) + sizeof(void *));
+        if (!iterate) break;
+        proc = ReadKernel64(proc + koffset(KSTRUCT_OFFSET_PROC_P_LIST) + sizeof(kptr_t));
     }
+    ret = true;
+out:;
+    return ret;
 }
 
 kptr_t get_proc_struct_for_pid(pid_t pid)
 {
     __block auto proc = KPTR_NULL;
-    iterate_proc_list(^(kptr_t found_proc, pid_t found_pid, int *iterate) {
+    auto const handler = ^(kptr_t found_proc, pid_t found_pid, int *iterate) {
         if (found_pid == pid) {
             proc = found_proc;
             *iterate = false;
         }
-    });
+    };
+    if (!iterate_proc_list(handler)) goto out;
+out:;
     return proc;
 }
 
 kptr_t get_address_of_port(pid_t pid, mach_port_t port)
 {
-    
-    static auto proc_struct_addr = KPTR_NULL;
-    static auto task_addr = KPTR_NULL;
-    static auto itk_space = KPTR_NULL;
-    static auto is_table = KPTR_NULL;
-    if (!KERN_POINTER_VALID(proc_struct_addr)) {
-        proc_struct_addr = get_proc_struct_for_pid(pid);
-        LOG("proc_struct_addr = " ADDR, proc_struct_addr);
-        if (!KERN_POINTER_VALID(proc_struct_addr)) {
-            LOG("failed to get proc_struct_addr!");
-            return 0;
-        }
-    }
-    if (!KERN_POINTER_VALID(task_addr)) {
-        task_addr = ReadKernel64(proc_struct_addr + koffset(KSTRUCT_OFFSET_PROC_TASK));
-        LOG("task_addr = " ADDR, task_addr);
-        if (!KERN_POINTER_VALID(task_addr)) {
-            LOG("failed to get task_addr!");
-            return 0;
-        }
-    }
-    if (!KERN_POINTER_VALID(itk_space)) {
-        itk_space = ReadKernel64(task_addr + koffset(KSTRUCT_OFFSET_TASK_ITK_SPACE));
-        LOG("itk_space = " ADDR, itk_space);
-        if (!KERN_POINTER_VALID(itk_space)) {
-            LOG("failed to get itk_space!");
-            return 0;
-        }
-    }
-    if (!KERN_POINTER_VALID(is_table)) {
-        is_table = ReadKernel64(itk_space + koffset(KSTRUCT_OFFSET_IPC_SPACE_IS_TABLE));
-        LOG("is_table = " ADDR, is_table);
-        if (!KERN_POINTER_VALID(is_table)) {
-            LOG("failed to get is_table!");
-            return 0;
-        }
-    }
-    auto port_addr = ReadKernel64(is_table + (MACH_PORT_INDEX(port) * koffset(KSTRUCT_SIZE_IPC_ENTRY)));
-    LOG("port_addr = " ADDR, port_addr);
-    if (!KERN_POINTER_VALID(port_addr)) {
-        LOG("failed to get port_addr!");
-        return 0;
-    }
-    return port_addr;
+    auto ret = KPTR_NULL;
+    if (!MACH_PORT_VALID(port)) goto out;
+    auto const proc_struct_addr = get_proc_struct_for_pid(pid);
+    if (!KERN_POINTER_VALID(proc_struct_addr)) goto out;
+    auto const task_addr = ReadKernel64(proc_struct_addr + koffset(KSTRUCT_OFFSET_PROC_TASK));
+    if (!KERN_POINTER_VALID(task_addr)) goto out;
+    auto const itk_space = ReadKernel64(task_addr + koffset(KSTRUCT_OFFSET_TASK_ITK_SPACE));
+    if (!KERN_POINTER_VALID(itk_space)) goto out;
+    auto const is_table = ReadKernel64(itk_space + koffset(KSTRUCT_OFFSET_IPC_SPACE_IS_TABLE));
+    if (!KERN_POINTER_VALID(is_table)) goto out;
+    auto const port_addr = ReadKernel64(is_table + (MACH_PORT_INDEX(port) * koffset(KSTRUCT_SIZE_IPC_ENTRY)));
+    if (!KERN_POINTER_VALID(port_addr)) goto out;
+    ret = port_addr;
+out:;
+    return ret;
 }
 
 kptr_t get_kernel_cred_addr()
 {
-    static auto kernel_proc_struct_addr = KPTR_NULL;
-    static auto kernel_ucred_struct_addr = KPTR_NULL;
-    if (!KERN_POINTER_VALID(kernel_proc_struct_addr)) {
-        kernel_proc_struct_addr = get_proc_struct_for_pid(0);
-        LOG("kernel_proc_struct_addr = " ADDR, kernel_proc_struct_addr);
-        if (!KERN_POINTER_VALID(kernel_proc_struct_addr)) {
-            LOG("failed to get kernel_proc_struct_addr!");
-            return 0;
-        }
-    }
-    if (!KERN_POINTER_VALID(kernel_ucred_struct_addr)) {
-        kernel_ucred_struct_addr = ReadKernel64(kernel_proc_struct_addr + koffset(KSTRUCT_OFFSET_PROC_UCRED));
-        LOG("kernel_ucred_struct_addr = " ADDR, kernel_ucred_struct_addr);
-        if (!KERN_POINTER_VALID(kernel_ucred_struct_addr)) {
-            LOG("failed to get kernel_ucred_struct_addr!");
-            return 0;
-        }
-    }
-    return kernel_ucred_struct_addr;
+    auto ret = KPTR_NULL;
+    auto const kernel_proc_struct_addr = get_proc_struct_for_pid(0);
+    if (!KERN_POINTER_VALID(kernel_proc_struct_addr)) goto out;
+    auto const kernel_ucred_struct_addr = ReadKernel64(kernel_proc_struct_addr + koffset(KSTRUCT_OFFSET_PROC_UCRED));
+    if (!KERN_POINTER_VALID(kernel_ucred_struct_addr)) goto out;
+    ret = kernel_ucred_struct_addr;
+out:;
+    return ret;
 }
 
 kptr_t give_creds_to_process_at_addr(kptr_t proc, kptr_t cred_addr)
 {
-    auto orig_creds = ReadKernel64(proc + koffset(KSTRUCT_OFFSET_PROC_UCRED));
-    LOG("orig_creds = " ADDR, orig_creds);
-    if (!KERN_POINTER_VALID(orig_creds)) {
-        LOG("failed to get orig_creds!");
-        return 0;
-    }
-    WriteKernel64(proc + koffset(KSTRUCT_OFFSET_PROC_UCRED), cred_addr);
-    return orig_creds;
+    auto ret = KPTR_NULL;
+    if (!KERN_POINTER_VALID(proc) || !KERN_POINTER_VALID(cred_addr)) goto out;
+    auto const proc_cred_addr = proc + koffset(KSTRUCT_OFFSET_PROC_UCRED);
+    auto const current_cred_addr = ReadKernel64(proc_cred_addr);
+    if (!KERN_POINTER_VALID(current_cred_addr)) goto out;
+    if (!WriteKernel64(proc_cred_addr, cred_addr)) goto out;
+    ret = current_cred_addr;
+out:;
+    return ret;
 }
 
-void set_platform_binary(kptr_t proc, bool set)
+bool set_platform_binary(kptr_t proc, bool set)
 {
-    auto task_struct_addr = ReadKernel64(proc + koffset(KSTRUCT_OFFSET_PROC_TASK));
-    LOG("task_struct_addr = " ADDR, task_struct_addr);
-    if (!KERN_POINTER_VALID(task_struct_addr)) {
-        LOG("failed to get task_struct_addr!");
-        return;
-    }
-    auto task_t_flags = ReadKernel32(task_struct_addr + koffset(KSTRUCT_OFFSET_TASK_TFLAGS));
+    auto ret = false;
+    if (!KERN_POINTER_VALID(proc)) goto out;
+    auto const task_struct_addr = ReadKernel64(proc + koffset(KSTRUCT_OFFSET_PROC_TASK));
+    if (!KERN_POINTER_VALID(task_struct_addr)) goto out;
+    auto const task_t_flags_addr = task_struct_addr + koffset(KSTRUCT_OFFSET_TASK_TFLAGS);
+    auto task_t_flags = ReadKernel32(task_t_flags_addr);
     if (set) {
         task_t_flags |= TF_PLATFORM;
     } else {
         task_t_flags &= ~(TF_PLATFORM);
     }
-    WriteKernel32(task_struct_addr + koffset(KSTRUCT_OFFSET_TASK_TFLAGS), task_t_flags);
+    if (!WriteKernel32(task_struct_addr + koffset(KSTRUCT_OFFSET_TASK_TFLAGS), task_t_flags)) goto out;
+    ret = true;
+out:;
+    return ret;
 }
 
 // Thanks to @Siguza
@@ -310,566 +293,680 @@ kptr_t zm_fix_addr(kptr_t addr) {
         uint64_t start;
         uint64_t end;
     } kmap_hdr_t;
-    static kmap_hdr_t zm_hdr = {0, 0, 0, 0};
-    if (!KERN_POINTER_VALID(zm_hdr.start)) {
-        auto zone_map = ReadKernel64(GETOFFSET(zone_map_ref));
-        LOG("zone_map: " ADDR, zone_map);
-        // hdr is at offset 0x10, mutexes at start
-        auto r = kread(zone_map + 0x10, &zm_hdr, sizeof(zm_hdr));
-        LOG("zm_range: " ADDR " - " ADDR " (read 0x%zx, exp 0x%zx)", zm_hdr.start, zm_hdr.end, r, sizeof(zm_hdr));
-        if (r != sizeof(zm_hdr) || !KERN_POINTER_VALID(zm_hdr.start) || !KERN_POINTER_VALID(zm_hdr.end)) {
-            LOG("kread of zone_map failed!");
-            return 0;
-        }
-        if (zm_hdr.end - zm_hdr.start > 0x100000000) {
-            LOG("zone_map is too big, sorry.");
-            return 0;
-        }
-    }
-    auto zm_tmp = (zm_hdr.start & 0xffffffff00000000) | ((addr) & 0xffffffff);
-    return zm_tmp < zm_hdr.start ? zm_tmp + 0x100000000 : zm_tmp;
+    auto zm_fixed_addr = KPTR_NULL;
+    auto zm_hdr = (kmap_hdr_t *)NULL;
+    zm_hdr = (kmap_hdr_t *)malloc(sizeof(kmap_hdr_t));
+    if (zm_hdr == NULL) goto out;
+    auto const zone_map = ReadKernel64(GETOFFSET(zone_map_ref));
+    if (!KERN_POINTER_VALID(zone_map)) goto out;
+    if (!rkbuffer(zone_map + 0x10, zm_hdr, sizeof(kmap_hdr_t))) goto out;
+    if (zm_hdr->end - zm_hdr->start > 0x100000000) goto out;
+    auto const zm_tmp = (zm_hdr->start & 0xffffffff00000000) | ((addr) & 0xffffffff);
+    zm_fixed_addr = zm_tmp < zm_hdr->start ? zm_tmp + 0x100000000 : zm_tmp;
+out:;
+    SafeFreeNULL(zm_hdr);
+    return zm_fixed_addr;
 }
 
 bool verify_tfp0() {
-    auto test_size = sizeof(kptr_t);
-    auto test_kptr = kmem_alloc(test_size);
-    if (!KERN_POINTER_VALID(test_kptr)) {
-        LOG("failed to allocate kernel memory!");
-        return false;
-    }
-    auto test_write_data = 0x4141414141414141;
-    if (!wkbuffer(test_kptr, (void *)&test_write_data, test_size)) {
-        LOG("failed to write to kernel memory!");
-        return false;
-    }
-    auto test_read_data = KPTR_NULL;
-    if (!rkbuffer(test_kptr, (void *)&test_read_data, test_size)) {
-        LOG("failed to read kernel memory!");
-        return false;
-    }
-    if (test_write_data != test_read_data) {
-        LOG("failed to verify kernel memory read data!");
-        return false;
-    }
-    if (!kmem_free(test_kptr, test_size)) {
-        LOG("failed to deallocate kernel memory!");
-        return false;
-    }
-    return true;
+    auto ret = false;
+    auto test_kptr_size = SIZE_NULL;
+    auto test_kptr = KPTR_NULL;
+    auto const test_data = (kptr_t)0x4141414141414141;
+    test_kptr_size = sizeof(kptr_t);
+    test_kptr = kmem_alloc(test_kptr_size);
+    if (!KERN_POINTER_VALID(test_kptr)) goto out;
+    if (!WriteKernel64(test_kptr, test_data)) goto out;
+    if (ReadKernel64(test_kptr) != test_data) goto out;
+    ret = true;
+out:;
+    if (KERN_POINTER_VALID(test_kptr)) kmem_free(test_kptr, test_kptr_size); test_kptr = KPTR_NULL;
+    return ret;
 }
 
 int (*pmap_load_trust_cache)(kptr_t kernel_trust, size_t length) = NULL;
 int _pmap_load_trust_cache(kptr_t kernel_trust, size_t length) {
-    return (int)kexecute(GETOFFSET(pmap_load_trust_cache), kernel_trust, length, 0, 0, 0, 0, 0);
+    auto ret = -1;
+    if (!KERN_POINTER_VALID(kernel_trust)) goto out;
+    auto const function = GETOFFSET(pmap_load_trust_cache);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    ret = (int)kexecute(GETOFFSET(pmap_load_trust_cache), kernel_trust, (kptr_t)length, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
+    return ret;
 }
 
-void set_host_type(host_t host, uint32_t type) {
-    auto hostport_addr = get_address_of_port(getpid(), host);
-    auto old = ReadKernel32(hostport_addr);
-    LOG("old host type: 0x%08x", old);
-    if ((old & type) != type) {
-        WriteKernel32(hostport_addr, type);
-        auto new = ReadKernel32(hostport_addr);
-        LOG("new host type: 0x%08x", new);
-    }
+bool set_host_type(host_t host, uint32_t type) {
+    auto ret = false;
+    if (!MACH_PORT_VALID(host)) goto out;
+    auto const hostport_addr = get_address_of_port(getpid(), host);
+    if (!KERN_POINTER_VALID(hostport_addr)) goto out;
+    if (!WriteKernel32(hostport_addr, type)) goto out;
+    ret = true;
+out:;
+    return ret;
 }
 
-void export_tfp0(host_t host) {
-    set_host_type(host, IO_ACTIVE | IKOT_HOST_PRIV);
+bool export_tfp0(host_t host) {
+    auto ret = false;
+    if (!MACH_PORT_VALID(host)) goto out;
+    const auto type = IO_ACTIVE | IKOT_HOST_PRIV;
+    if (!set_host_type(host, type)) goto out;
+    ret = true;
+out:;
+    return ret;
 }
 
-void unexport_tfp0(host_t host) {
-    set_host_type(host, IO_ACTIVE | IKOT_HOST);
+bool unexport_tfp0(host_t host) {
+    auto ret = false;
+    if (!MACH_PORT_VALID(host)) goto out;
+    const auto type = IO_ACTIVE | IKOT_HOST;
+    if (!set_host_type(host, type)) goto out;
+    ret = true;
+out:;
+    return ret;
 }
 
-void set_csflags(kptr_t proc, uint32_t flags, bool value) {
-    auto csflags = ReadKernel32(proc + koffset(KSTRUCT_OFFSET_PROC_P_CSFLAGS));
+bool set_csflags(kptr_t proc, uint32_t flags, bool value) {
+    auto ret = false;
+    if (!KERN_POINTER_VALID(proc)) goto out;
+    auto const proc_csflags_addr = proc + koffset(KSTRUCT_OFFSET_PROC_P_CSFLAGS);
+    auto csflags = ReadKernel32(proc_csflags_addr);
     if (value == true) {
         csflags |= flags;
     } else {
         csflags &= ~flags;
     }
-    WriteKernel32(proc + koffset(KSTRUCT_OFFSET_PROC_P_CSFLAGS), csflags);
+    if (!WriteKernel32(proc_csflags_addr, csflags)) goto out;
+    ret = true;
+out:;
+    return ret;
 }
 
-void set_cs_platform_binary(kptr_t proc, bool value) {
-    set_csflags(proc, CS_PLATFORM_BINARY, value);
+bool set_cs_platform_binary(kptr_t proc, bool value) {
+    auto ret = false;
+    if (!KERN_POINTER_VALID(proc)) goto out;
+    if (!set_csflags(proc, CS_PLATFORM_BINARY, value)) goto out;
+    ret = true;
+out:;
+    return ret;
 }
 
 bool execute_with_credentials(kptr_t proc, kptr_t credentials, void (^function)(void)) {
-    assert(function != NULL);
-    auto saved_credentials = give_creds_to_process_at_addr(proc, credentials);
+    auto ret = KPTR_NULL;
+    if (!KERN_POINTER_VALID(proc) || !KERN_POINTER_VALID(credentials) || function == NULL) goto out;
+    auto const saved_credentials = give_creds_to_process_at_addr(proc, credentials);
+    if (!KERN_POINTER_VALID(saved_credentials)) goto out;
     function();
-    return (give_creds_to_process_at_addr(proc, saved_credentials) == saved_credentials);
+    ret = give_creds_to_process_at_addr(proc, saved_credentials);
+out:;
+    return ret;
 }
 
 uint32_t get_proc_memstat_state(kptr_t proc) {
-    return ReadKernel32(proc + koffset(KSTRUCT_OFFSET_PROC_P_MEMSTAT_STATE));
+    auto ret = (uint32_t)0;
+    if (!KERN_POINTER_VALID(proc)) goto out;
+    auto const p_memstat_state = ReadKernel32(proc + koffset(KSTRUCT_OFFSET_PROC_P_MEMSTAT_STATE));
+    ret = p_memstat_state;
+out:;
+    return ret;
 }
 
-void set_proc_memstat_state(kptr_t proc, uint32_t memstat_state) {
-    WriteKernel32(proc + koffset(KSTRUCT_OFFSET_PROC_P_MEMSTAT_STATE), memstat_state);
+bool set_proc_memstat_state(kptr_t proc, uint32_t memstat_state) {
+    auto ret = false;
+    if (!KERN_POINTER_VALID(proc)) goto out;
+    if (!WriteKernel32(proc + koffset(KSTRUCT_OFFSET_PROC_P_MEMSTAT_STATE), memstat_state)) goto out;
+    ret = true;
+out:;
+    return ret;
 }
 
-void set_proc_memstat_internal(kptr_t proc, bool set) {
+bool set_proc_memstat_internal(kptr_t proc, bool set) {
+    auto ret = false;
+    if (!KERN_POINTER_VALID(proc)) goto out;
     auto memstat_state = get_proc_memstat_state(proc);
     if (set) {
         memstat_state |= P_MEMSTAT_INTERNAL;
     } else {
         memstat_state &= ~P_MEMSTAT_INTERNAL;
     }
-    set_proc_memstat_state(proc, memstat_state);
+    if (!set_proc_memstat_state(proc, memstat_state)) goto out;
+    ret = true;
+out:;
+    return ret;
 }
 
 bool get_proc_memstat_internal(kptr_t proc) {
-    return (get_proc_memstat_state(proc) & P_MEMSTAT_INTERNAL);
+    auto ret = false;
+    if (!KERN_POINTER_VALID(proc)) goto out;
+    auto const p_memstat_state = get_proc_memstat_state(proc);
+    ret = (p_memstat_state & P_MEMSTAT_INTERNAL);
+out:;
+    return ret;
 }
 
 size_t kstrlen(kptr_t ptr) {
-    auto kstrlen = (size_t)kexecute(GETOFFSET(strlen), ptr, 0, 0, 0, 0, 0, 0);
-    return kstrlen;
+    auto size = SIZE_NULL;
+    if (!KERN_POINTER_VALID(ptr)) goto out;
+    size = (size_t)kexecute(GETOFFSET(strlen), ptr, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
+    return size;
 }
 
 kptr_t kstralloc(const char *str) {
-    auto str_kptr_size = strlen(str) + 1;
-    auto str_kptr = kmem_alloc(str_kptr_size);
-    if (KERN_POINTER_VALID(str_kptr)) {
-        kwrite(str_kptr, str, str_kptr_size);
+    auto ret = false;
+    auto str_kptr = KPTR_NULL;
+    auto str_kptr_size = SIZE_NULL;
+    if (str == NULL) goto out;
+    str_kptr_size = strlen(str) + 1;
+    str_kptr = kmem_alloc(str_kptr_size);
+    if (!KERN_POINTER_VALID(str_kptr)) goto out;
+    if (!wkbuffer(str_kptr, (void *)str, str_kptr_size)) goto out;
+    ret = true;
+out:;
+    if (!ret && str_kptr_size != SIZE_NULL && KERN_POINTER_VALID(str_kptr)) {
+        kmem_free(str_kptr, str_kptr_size);
+        str_kptr = KPTR_NULL;
+        str_kptr_size = SIZE_NULL;
     }
     return str_kptr;
 }
 
-void kstrfree(kptr_t ptr) {
-    if (KERN_POINTER_VALID(ptr)) {
-        auto size = kstrlen(ptr) + 1;
-        kmem_free(ptr, size);
-    }
+bool kstrfree(kptr_t ptr) {
+    bool ret = false;
+    auto size = SIZE_NULL;
+    if (!KERN_POINTER_VALID(ptr)) goto out;
+    size = kstrlen(ptr) + 1;
+    if (!kmem_free(ptr, size)) goto out;
+    ret = true;
+out:;
+    return ret;
 }
 
 kptr_t sstrdup(const char *str) {
-    auto sstrdup = KPTR_NULL;
-    auto kstr = kstralloc(str);
-    if (KERN_POINTER_VALID(kstr)) {
-        sstrdup = kexecute(GETOFFSET(sstrdup), kstr, 0, 0, 0, 0, 0, 0);
-        sstrdup = zm_fix_addr(sstrdup);
-        kstrfree(kstr);
-    }
-    return sstrdup;
+    auto ret = KPTR_NULL;
+    auto kstr = KPTR_NULL;
+    if (str == NULL) goto out;
+    auto const function = GETOFFSET(sstrdup);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kstr = kstralloc(str);
+    if (!KERN_POINTER_VALID(kstr)) goto out;
+    ret = kexecute(function, kstr, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+    if (ret != KPTR_NULL) ret = zm_fix_addr(ret);
+out:;
+    if (KERN_POINTER_VALID(kstr)) kstrfree(kstr); kstr = KPTR_NULL;
+    return ret;
 }
 
 kptr_t smalloc(size_t size) {
-    auto smalloc = kexecute(GETOFFSET(smalloc), (kptr_t)size, 0, 0, 0, 0, 0, 0);
-    smalloc = zm_fix_addr(smalloc);
-    return smalloc;
+    auto ret = KPTR_NULL;
+    auto const function = GETOFFSET(smalloc);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    ret = kexecute(function, (kptr_t)size, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+    if (ret != KPTR_NULL) ret = zm_fix_addr(ret);
+out:;
+    return ret;
 }
 
 void sfree(kptr_t ptr) {
-    kexecute(GETOFFSET(sfree), ptr, 0, 0, 0, 0, 0, 0);
+    if (!KERN_POINTER_VALID(ptr)) goto out;
+    auto const function = GETOFFSET(sfree);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kexecute(function, ptr, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
 }
 
 int extension_create_file(kptr_t saveto, kptr_t sb, const char *path, size_t path_len, uint32_t subtype) {
-    auto extension_create_file = -1;
-    auto kstr = kstralloc(path);
-    if (KERN_POINTER_VALID(kstr)) {
-        extension_create_file = (int)kexecute(GETOFFSET(extension_create_file), saveto, sb, kstr, (kptr_t)path_len, (kptr_t)subtype, 0, 0);
-        kstrfree(kstr);
-    }
-    return extension_create_file;
+    auto ret = -1;
+    auto kstr = KPTR_NULL;
+    if (!KERN_POINTER_VALID(saveto) || !KERN_POINTER_VALID(sb) || path == NULL || path_len <= 0) goto out;
+    auto const function = GETOFFSET(extension_create_file);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kstr = kstralloc(path);
+    if (!KERN_POINTER_VALID(kstr)) goto out;
+    ret = (int)kexecute(function, saveto, sb, kstr, (kptr_t)path_len, (kptr_t)subtype, KPTR_NULL, KPTR_NULL);
+out:;
+    if (KERN_POINTER_VALID(kstr)) kstrfree(kstr); kstr = KPTR_NULL;
+    return ret;
 }
 
 int extension_create_mach(kptr_t saveto, kptr_t sb, const char *name, uint32_t subtype) {
-    auto extension_create_mach = -1;
-    auto kstr = kstralloc(name);
-    if (KERN_POINTER_VALID(kstr)) {
-        extension_create_mach = (int)kexecute(GETOFFSET(extension_create_mach), saveto, sb, kstr, (kptr_t)subtype, 0, 0, 0);
-        kstrfree(kstr);
-    }
-    return extension_create_mach;
+    auto ret = -1;
+    auto kstr = KPTR_NULL;
+    auto const function = GETOFFSET(extension_create_mach);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kstr = KPTR_NULL;
+    if (!KERN_POINTER_VALID(saveto) || !KERN_POINTER_VALID(sb) || name == NULL) goto out;
+    kstr = kstralloc(name);
+    if (!KERN_POINTER_VALID(kstr)) goto out;
+    ret = (int)kexecute(function, saveto, sb, kstr, (kptr_t)subtype, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
+    if (KERN_POINTER_VALID(kstr)) kstrfree(kstr); kstr = KPTR_NULL;
+    return ret;
 }
 
 int extension_add(kptr_t ext, kptr_t sb, const char *desc) {
-    auto extension_add = -1;
-    auto kstr = kstralloc(desc);
-    if (KERN_POINTER_VALID(kstr)) {
-        extension_add = (int)kexecute(GETOFFSET(extension_add), ext, sb, kstr, 0, 0, 0, 0);
-        kstrfree(kstr);
-    }
-    return extension_add;
+    auto ret = -1;
+    auto kstr = KPTR_NULL;
+    if (!KERN_POINTER_VALID(ext) || !KERN_POINTER_VALID(sb) || desc == NULL) goto out;
+    auto const function = GETOFFSET(extension_add);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kstr = kstralloc(desc);
+    if (!KERN_POINTER_VALID(kstr)) goto out;
+    ret = (int)kexecute(function, ext, sb, kstr, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
+    if (KERN_POINTER_VALID(kstr)) kstrfree(kstr); kstr = KPTR_NULL;
+    return ret;
 }
 
 void extension_release(kptr_t ext) {
-    kexecute(GETOFFSET(extension_release), ext, 0, 0, 0, 0, 0, 0);
+    if (!KERN_POINTER_VALID(ext)) goto out;
+    auto const function = GETOFFSET(extension_release);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kexecute(function, ext, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
 }
 
 void extension_destroy(kptr_t ext) {
-    kexecute(GETOFFSET(extension_destroy), ext, 0, 0, 0, 0, 0, 0);
+    if (!KERN_POINTER_VALID(ext)) goto out;
+    auto const function = GETOFFSET(extension_destroy);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kexecute(function, ext, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
 }
 
 bool set_file_extension(kptr_t sandbox, const char *exc_key, const char *path) {
-    auto set_file_extension = false;
-    if (KERN_POINTER_VALID(sandbox)) {
-        auto ext = smalloc(SIZEOF_STRUCT_EXTENSION);
-        if (KERN_POINTER_VALID(ext)) {
-            auto ret_extension_create_file = extension_create_file(ext, sandbox, path, strlen(path) + 1, 0);
-            if (ret_extension_create_file == 0) {
-                auto ret_extension_add = extension_add(ext, sandbox, exc_key);
-                if (ret_extension_add == 0) {
-                    set_file_extension = true;
-                }
-            }
-            extension_release(ext);
-        }
-    } else {
-        set_file_extension = true;
-    }
-    return set_file_extension;
+    auto ret = false;
+    auto ext = KPTR_NULL;
+    if (!KERN_POINTER_VALID(sandbox) || exc_key == NULL || path == NULL) goto out;
+    ext = smalloc(SIZEOF_STRUCT_EXTENSION);
+    if (!KERN_POINTER_VALID(ext)) goto out;
+    auto const ret_extension_create_file = extension_create_file(ext, sandbox, path, strlen(path) + 1, 0);
+    if (ret_extension_create_file != 0) goto out;
+    auto const ret_extension_add = extension_add(ext, sandbox, exc_key);
+    if (ret_extension_add != 0) goto out;
+    ret = true;
+out:;
+    if (KERN_POINTER_VALID(ext)) extension_release(ext);
+    return ret;
 }
 
 bool set_mach_extension(kptr_t sandbox, const char *exc_key, const char *name) {
-    auto set_mach_extension = false;
-    if (KERN_POINTER_VALID(sandbox)) {
-        auto ext = smalloc(SIZEOF_STRUCT_EXTENSION);
-        if (KERN_POINTER_VALID(ext)) {
-            auto ret_extension_create_mach = extension_create_mach(ext, sandbox, name, 0);
-            if (ret_extension_create_mach == 0) {
-                auto ret_extension_add = extension_add(ext, sandbox, exc_key);
-                if (ret_extension_add == 0) {
-                    set_mach_extension = true;
-                }
-            }
-            extension_release(ext);
-        }
-    } else {
-        set_mach_extension = true;
-    }
-    return set_mach_extension;
+    auto ret = false;
+    auto ext = KPTR_NULL;
+    if (!KERN_POINTER_VALID(sandbox) || exc_key == NULL || name == NULL) goto out;
+    ext = smalloc(SIZEOF_STRUCT_EXTENSION);
+    if (!KERN_POINTER_VALID(ext)) goto out;
+    auto const ret_extension_create_mach = extension_create_mach(ext, sandbox, name, 0);
+    if (ret_extension_create_mach != 0) goto out;
+    auto const ret_extension_add = extension_add(ext, sandbox, exc_key);
+    if (ret_extension_add != 0) goto out;
+    ret = true;
+out:;
+    if (KERN_POINTER_VALID(ext)) extension_release(ext);
+    return ret;
 }
 
 kptr_t proc_find(pid_t pid) {
-    auto proc_find = kexecute(GETOFFSET(proc_find), (kptr_t)pid, 0, 0, 0, 0, 0, 0);
-    if (proc_find != 0) {
-        proc_find = zm_fix_addr(proc_find);
-    }
-    return proc_find;
+    auto ret = KPTR_NULL;
+    ret = kexecute(GETOFFSET(proc_find), (kptr_t)pid, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+    if (ret != KPTR_NULL) ret = zm_fix_addr(ret);
+out:;
+    return ret;
 }
 
 void proc_rele(kptr_t proc) {
-    kexecute(GETOFFSET(proc_rele), proc, 0, 0, 0, 0, 0, 0);
+    if (!KERN_POINTER_VALID(proc)) goto out;
+    kexecute(GETOFFSET(proc_rele), proc, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
 }
 
 void proc_lock(kptr_t proc) {
-    auto function = GETOFFSET(proc_lock);
-    if (KERN_POINTER_VALID(function)) {
-        kexecute(function, proc, 0, 0, 0, 0, 0, 0);
-    }
+    if (!KERN_POINTER_VALID(proc)) goto out;
+    auto const function = GETOFFSET(proc_lock);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kexecute(function, proc, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
 }
 
 void proc_unlock(kptr_t proc) {
-    auto function = GETOFFSET(proc_unlock);
-    if (KERN_POINTER_VALID(function)) {
-        kexecute(function, proc, 0, 0, 0, 0, 0, 0);
-    }
+    if (!KERN_POINTER_VALID(proc)) goto out;
+    auto const function = GETOFFSET(proc_unlock);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kexecute(function, proc, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
 }
 
 void proc_ucred_lock(kptr_t proc) {
-    auto function = GETOFFSET(proc_ucred_lock);
-    if (KERN_POINTER_VALID(function)) {
-        kexecute(function, proc, 0, 0, 0, 0, 0, 0);
-    }
+    if (!KERN_POINTER_VALID(proc)) goto out;
+    auto const function = GETOFFSET(proc_ucred_lock);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kexecute(function, proc, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
 }
 
 void proc_ucred_unlock(kptr_t proc) {
-    auto function = GETOFFSET(proc_ucred_unlock);
-    if (KERN_POINTER_VALID(function)) {
-        kexecute(function, proc, 0, 0, 0, 0, 0, 0);
-    }
+    if (!KERN_POINTER_VALID(proc)) goto out;
+    auto const function = GETOFFSET(proc_ucred_unlock);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kexecute(function, proc, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
 }
 
 void vnode_lock(kptr_t vp) {
-    auto function = GETOFFSET(vnode_lock);
-    if (KERN_POINTER_VALID(function)) {
-        kexecute(function, vp, 0, 0, 0, 0, 0, 0);
-    }
+    if (!KERN_POINTER_VALID(vp)) goto out;
+    auto const function = GETOFFSET(vnode_lock);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kexecute(function, vp, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
 }
 
 void vnode_unlock(kptr_t vp) {
-    auto function = GETOFFSET(vnode_unlock);
-    if (KERN_POINTER_VALID(function)) {
-        kexecute(function, vp, 0, 0, 0, 0, 0, 0);
-    }
+    if (!KERN_POINTER_VALID(vp)) goto out;
+    auto const function = GETOFFSET(vnode_unlock);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kexecute(function, vp, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
 }
 
 void mount_lock(kptr_t mp) {
-    auto function = GETOFFSET(mount_lock);
-    if (KERN_POINTER_VALID(function)) {
-        kexecute(function, mp, 0, 0, 0, 0, 0, 0);
-    }
+    if (!KERN_POINTER_VALID(mp)) goto out;
+    auto const function = GETOFFSET(mount_lock);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kexecute(function, mp, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
 }
 
 void mount_unlock(kptr_t mp) {
-    auto function = GETOFFSET(mount_unlock);
-    if (KERN_POINTER_VALID(function)) {
-        kexecute(function, mp, 0, 0, 0, 0, 0, 0);
-    }
+    if (!KERN_POINTER_VALID(mp)) goto out;
+    auto const function = GETOFFSET(mount_unlock);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kexecute(function, mp, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
 }
 
 void task_set_platform_binary(kptr_t task, boolean_t is_platform) {
-    auto function = GETOFFSET(task_set_platform_binary);
-    if (KERN_POINTER_VALID(function)) {
-        kexecute(function, task, (kptr_t)is_platform, 0, 0, 0, 0, 0);
-    }
+    if (!KERN_POINTER_VALID(task)) goto out;
+    auto const function = GETOFFSET(task_set_platform_binary);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kexecute(function, task, (kptr_t)is_platform, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
 }
 
 int chgproccnt(uid_t uid, int diff) {
-    auto chgproccnt = 0;
-    auto function = GETOFFSET(chgproccnt);
-    if (KERN_POINTER_VALID(function)) {
-        chgproccnt = (int)kexecute(function, (kptr_t)uid, (kptr_t)diff, 0, 0, 0, 0, 0);
-    }
-    return chgproccnt;
+    auto ret = -1;
+    auto const function = GETOFFSET(chgproccnt);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    ret = (int)kexecute(function, (kptr_t)uid, (kptr_t)diff, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
+    return ret;
 }
 
 void kauth_cred_ref(kptr_t cred) {
-    auto function = GETOFFSET(kauth_cred_ref);
-    if (KERN_POINTER_VALID(function)) {
-        kexecute(function, cred, 0, 0, 0, 0, 0, 0);
-    }
+    if (!KERN_POINTER_VALID(cred)) goto out;
+    auto const function = GETOFFSET(kauth_cred_ref);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kexecute(function, cred, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
 }
 
 void kauth_cred_unref(kptr_t cred) {
-    auto function = GETOFFSET(kauth_cred_unref);
-    if (KERN_POINTER_VALID(function)) {
-        kexecute(function, cred, 0, 0, 0, 0, 0, 0);
-    }
+    if (!KERN_POINTER_VALID(cred)) goto out;
+    auto const function = GETOFFSET(kauth_cred_unref);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kexecute(function, cred, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
 }
 
 kptr_t vfs_context_current() {
-    auto vfs_context_current = kexecute(GETOFFSET(vfs_context_current), 1, 0, 0, 0, 0, 0, 0);
-    vfs_context_current = zm_fix_addr(vfs_context_current);
-    return vfs_context_current;
+    auto ret = KPTR_NULL;
+    auto const function = GETOFFSET(vfs_context_current);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    ret = kexecute(function, (kptr_t)1, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+    if (ret != KPTR_NULL) ret = zm_fix_addr(ret);
+out:;
+    return ret;
 }
 
 int vnode_lookup(const char *path, int flags, kptr_t *vpp, kptr_t ctx) {
-    auto vnode_lookup = -1;
-    auto kstr = kstralloc(path);
-    if (KERN_POINTER_VALID(kstr)) {
-        auto vpp_kptr_size = sizeof(kptr_t);
-        auto vpp_kptr = kmem_alloc(vpp_kptr_size);
-        if (KERN_POINTER_VALID(vpp_kptr)) {
-            vnode_lookup = (int)kexecute(GETOFFSET(vnode_lookup), kstr, (kptr_t)flags, vpp_kptr, ctx, 0, 0, 0);
-            if (vnode_lookup == 0) {
-                if (vpp != NULL) {
-                    *vpp = ReadKernel64(vpp_kptr);
-                }
-            }
-            kmem_free(vpp_kptr, vpp_kptr_size);
-        }
-        kstrfree(kstr);
-    }
-    return vnode_lookup;
+    auto ret = -1;
+    auto kstr = KPTR_NULL;
+    auto vpp_kptr_size = SIZE_NULL;
+    auto vpp_kptr = KPTR_NULL;
+    if (path == NULL || vpp == NULL || !KERN_POINTER_VALID(ctx)) goto out;
+    auto const function = GETOFFSET(vnode_lookup);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kstr = kstralloc(path);
+    if (!KERN_POINTER_VALID(kstr)) goto out;
+    vpp_kptr_size = sizeof(kptr_t);
+    vpp_kptr = kmem_alloc(vpp_kptr_size);
+    if (!KERN_POINTER_VALID(vpp_kptr)) goto out;
+    ret = (int)kexecute(function, kstr, (kptr_t)flags, vpp_kptr, ctx, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+    if (!rkbuffer(vpp_kptr, vpp, vpp_kptr_size)) goto out;
+out:;
+    if (KERN_POINTER_VALID(kstr)) kstrfree(kstr); kstr = KPTR_NULL;
+    if (KERN_POINTER_VALID(vpp_kptr)) kmem_free(vpp_kptr, vpp_kptr_size); vpp_kptr = KPTR_NULL;
+    return ret;
 }
 
 int vnode_put(kptr_t vp) {
-    auto vnode_put = (int)kexecute(GETOFFSET(vnode_put), vp, 0, 0, 0, 0, 0, 0);
-    return vnode_put;
+    auto ret = -1;
+    if (!KERN_POINTER_VALID(vp)) goto out;
+    auto const function = GETOFFSET(vnode_put);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    ret = (int)kexecute(GETOFFSET(vnode_put), vp, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
+    return ret;
 }
 
 bool OSDictionary_SetItem(kptr_t OSDictionary, const char *key, kptr_t val) {
-    auto OSDictionary_SetItem = false;
-    auto function = OSObjectFunc(OSDictionary, off_OSDictionary_SetObjectWithCharP);
-    if (KERN_POINTER_VALID(function)) {
-        auto kstr = kstralloc(key);
-        if (KERN_POINTER_VALID(kstr)) {
-            OSDictionary_SetItem = (bool)kexecute(function, OSDictionary, kstr, val, 0, 0, 0, 0);
-            kstrfree(kstr);
-        }
-    }
-    return OSDictionary_SetItem;
+    auto ret = false;
+    auto kstr = KPTR_NULL;
+    if (!KERN_POINTER_VALID(OSDictionary) || key == NULL || !KERN_POINTER_VALID(val)) goto out;
+    auto const function = OSObjectFunc(OSDictionary, off_OSDictionary_SetObjectWithCharP);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kstr = kstralloc(key);
+    if (!KERN_POINTER_VALID(kstr)) goto out;
+    ret = (bool)kexecute(function, OSDictionary, kstr, val, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
+    if (KERN_POINTER_VALID(kstr)) kstrfree(kstr); kstr = KPTR_NULL;
+    return ret;
 }
 
 kptr_t OSDictionary_GetItem(kptr_t OSDictionary, const char *key) {
-    auto OSDictionary_GetItem = KPTR_NULL;
-    auto function = OSObjectFunc(OSDictionary, off_OSDictionary_GetObjectWithCharP);
-    if (KERN_POINTER_VALID(function)) {
-        auto kstr = kstralloc(key);
-        if (KERN_POINTER_VALID(kstr)) {
-            OSDictionary_GetItem = kexecute(function, OSDictionary, kstr, 0, 0, 0, 0, 0);
-            if (OSDictionary_GetItem != KPTR_NULL && (OSDictionary_GetItem >> 32) == 0) {
-                OSDictionary_GetItem = zm_fix_addr(OSDictionary_GetItem);
-            }
-            kstrfree(kstr);
-        }
-    }
-    return OSDictionary_GetItem;
+    auto ret = KPTR_NULL;
+    auto kstr = KPTR_NULL;
+    if (!KERN_POINTER_VALID(OSDictionary) || key == NULL) goto out;
+    auto const function = OSObjectFunc(OSDictionary, off_OSDictionary_GetObjectWithCharP);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kstr = kstralloc(key);
+    if (!KERN_POINTER_VALID(kstr)) goto out;
+    ret = kexecute(function, OSDictionary, kstr, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+    if (ret != KPTR_NULL && (ret>>32) == 0) ret = zm_fix_addr(ret);
+    if (!KERN_POINTER_VALID(ret)) goto out;
+out:;
+    if (KERN_POINTER_VALID(kstr)) kstrfree(kstr); kstr = KPTR_NULL;
+    return ret;
 }
 
 bool OSDictionary_Merge(kptr_t OSDictionary, kptr_t OSDictionary2) {
-    auto OSDictionary_Merge = false;
-    auto function = OSObjectFunc(OSDictionary, off_OSDictionary_Merge);
-    if (KERN_POINTER_VALID(function)) {
-        OSDictionary_Merge = (bool)kexecute(function, OSDictionary, OSDictionary2, 0, 0, 0, 0, 0);
-    }
-    return OSDictionary_Merge;
+    auto ret = false;
+    if (!KERN_POINTER_VALID(OSDictionary) || !KERN_POINTER_VALID(OSDictionary2)) goto out;
+    auto const function = OSObjectFunc(OSDictionary, off_OSDictionary_Merge);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    ret = (bool)kexecute(function, OSDictionary, OSDictionary2, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
+    return ret;
 }
 
 uint32_t OSDictionary_ItemCount(kptr_t OSDictionary) {
-    auto OSDictionary_ItemCount = (uint32_t)0;
-    if (KERN_POINTER_VALID(OSDictionary)) {
-        OSDictionary_ItemCount = ReadKernel32(OSDictionary + 20);
-    }
-    return OSDictionary_ItemCount;
+    auto ret = (uint32_t)0;
+    if (!KERN_POINTER_VALID(OSDictionary)) goto out;
+    ret = ReadKernel32(OSDictionary + 20);
+out:;
+    return ret;
 }
 
 kptr_t OSDictionary_ItemBuffer(kptr_t OSDictionary) {
-    auto OSDictionary_ItemBuffer = KPTR_NULL;
-    if (KERN_POINTER_VALID(OSDictionary)) {
-        OSDictionary_ItemBuffer = ReadKernel64(OSDictionary + 32);
-    }
-    return OSDictionary_ItemBuffer;
+    auto ret = KPTR_NULL;
+    if (!KERN_POINTER_VALID(OSDictionary)) goto out;
+    ret = ReadKernel64(OSDictionary + 32);
+out:;
+    return ret;
 }
 
 kptr_t OSDictionary_ItemKey(kptr_t buffer, uint32_t idx) {
-    auto OSDictionary_ItemKey = KPTR_NULL;
-    if (KERN_POINTER_VALID(buffer)) {
-        OSDictionary_ItemKey = ReadKernel64(buffer + 16 * idx);
-    }
-    return OSDictionary_ItemKey;
+    auto ret = KPTR_NULL;
+    if (!KERN_POINTER_VALID(buffer)) goto out;
+    ret = ReadKernel64(buffer + 16 * idx);
+out:;
+    return ret;
 }
 
 kptr_t OSDictionary_ItemValue(kptr_t buffer, uint32_t idx) {
-    auto OSDictionary_ItemValue = KPTR_NULL;
-    if (KERN_POINTER_VALID(buffer)) {
-        OSDictionary_ItemValue = ReadKernel64(buffer + 16 * idx + 8);
-    }
-    return OSDictionary_ItemValue;
+    auto ret = KPTR_NULL;
+    if (!KERN_POINTER_VALID(buffer)) goto out;
+    ret = ReadKernel64(buffer + 16 * idx + 8);
+out:;
+    return ret;
 }
 
 bool OSArray_Merge(kptr_t OSArray, kptr_t OSArray2) {
-    auto OSArray_Merge = false;
-    auto function = OSObjectFunc(OSArray, off_OSArray_Merge);
-    if (KERN_POINTER_VALID(function)) {
-        OSArray_Merge = (bool)kexecute(function, OSArray, OSArray2, 0, 0, 0, 0, 0);
-    }
-    return OSArray_Merge;
+    auto ret = false;
+    if (!KERN_POINTER_VALID(OSArray) || !KERN_POINTER_VALID(OSArray2)) goto out;
+    auto const function = OSObjectFunc(OSArray, off_OSArray_Merge);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    ret = (bool)kexecute(function, OSArray, OSArray2, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
+    return ret;
 }
 
 kptr_t OSArray_GetObject(kptr_t OSArray, uint32_t idx) {
-    auto OSArray_GetObject = KPTR_NULL;
-    auto function = OSObjectFunc(OSArray, off_OSArray_GetObject);
-    if (KERN_POINTER_VALID(function)) {
-        OSArray_GetObject = kexecute(OSArray, idx, 0, 0, 0, 0, 0, 0);
-        if (OSArray_GetObject != KPTR_NULL) {
-            OSArray_GetObject = zm_fix_addr(OSArray_GetObject);
-        }
-    }
-    return OSArray_GetObject;
+    auto ret = KPTR_NULL;
+    if (!KERN_POINTER_VALID(OSArray)) goto out;
+    auto const function = OSObjectFunc(OSArray, off_OSArray_GetObject);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    ret = kexecute(OSArray, idx, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+    if (ret != KPTR_NULL) ret = zm_fix_addr(ret);
+    if (!KERN_POINTER_VALID(ret)) goto out;
+out:;
+    return ret;
 }
 
 void OSArray_RemoveObject(kptr_t OSArray, uint32_t idx) {
-    auto function = OSObjectFunc(OSArray, off_OSArray_RemoveObject);
-    if (KERN_POINTER_VALID(function)) {
-        kexecute(function, OSArray, idx, 0, 0, 0, 0, 0);
-    }
+    if (!KERN_POINTER_VALID(OSArray)) goto out;
+    auto const function = OSObjectFunc(OSArray, off_OSArray_RemoveObject);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kexecute(function, OSArray, idx, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
 }
 
 uint32_t OSArray_ItemCount(kptr_t OSArray) {
-    auto OSArray_ItemCount = (uint32_t)0;
-    if (KERN_POINTER_VALID(OSArray)) {
-        OSArray_ItemCount = ReadKernel32(OSArray + 0x14);
-    }
-    return OSArray_ItemCount;
+    auto ret = (uint32_t)0;
+    if (!KERN_POINTER_VALID(OSArray)) goto out;
+    ret = ReadKernel32(OSArray + 0x14);
+out:;
+    return ret;
 }
 
 kptr_t OSArray_ItemBuffer(kptr_t OSArray) {
-    auto OSArray_ItemBuffer = KPTR_NULL;
-    if (KERN_POINTER_VALID(OSArray)) {
-        OSArray_ItemBuffer = ReadKernel64(OSArray + 32);
-    }
-    return OSArray_ItemBuffer;
+    auto ret = KPTR_NULL;
+    if (!KERN_POINTER_VALID(OSArray)) goto out;
+    ret = ReadKernel64(OSArray + 32);
+out:;
+    return ret;
 }
 
 kptr_t OSObjectFunc(kptr_t OSObject, uint32_t off) {
-    auto OSObjectFunc = KPTR_NULL;
+    auto ret = KPTR_NULL;
+    if (!KERN_POINTER_VALID(OSObject)) goto out;
     auto vtable = ReadKernel64(OSObject);
-    vtable = kernel_xpacd(vtable);
-    if (KERN_POINTER_VALID(vtable)) {
-        OSObjectFunc = ReadKernel64(vtable + off);
-        OSObjectFunc = kernel_xpaci(OSObjectFunc);
-    }
-    return OSObjectFunc;
+    if (vtable != KPTR_NULL) vtable = kernel_xpacd(vtable);
+    if (!KERN_POINTER_VALID(vtable)) goto out;
+    ret = ReadKernel64(vtable + off);
+    if (ret != KPTR_NULL) ret = kernel_xpaci(ret);
+    if (!KERN_POINTER_VALID(ret)) goto out;
+out:;
+    return ret;
 }
 
 void OSObject_Release(kptr_t OSObject) {
-    auto function = OSObjectFunc(OSObject, off_OSObject_Release);
-    if (KERN_POINTER_VALID(function)) {
-        kexecute(function, OSObject, 0, 0, 0, 0, 0, 0);
-    }
+    if (!KERN_POINTER_VALID(OSObject)) goto out;
+    auto const function = OSObjectFunc(OSObject, off_OSObject_Release);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kexecute(function, OSObject, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
 }
 
 void OSObject_Retain(kptr_t OSObject) {
-    auto function = OSObjectFunc(OSObject, off_OSObject_Retain);
-    if (KERN_POINTER_VALID(function)) {
-        kexecute(function, OSObject, 0, 0, 0, 0, 0, 0);
-    }
+    if (!KERN_POINTER_VALID(OSObject)) goto out;
+    auto const function = OSObjectFunc(OSObject, off_OSObject_Retain);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kexecute(function, OSObject, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
 }
 
 uint32_t OSObject_GetRetainCount(kptr_t OSObject) {
-    auto OSObject_GetRetainCount = (uint32_t)0;
-    auto function = OSObjectFunc(OSObject, off_OSObject_GetRetainCount);
-    if (KERN_POINTER_VALID(function)) {
-        OSObject_GetRetainCount = (uint32_t)kexecute(function, OSObject, 0, 0, 0, 0, 0, 0);
-    }
-    return OSObject_GetRetainCount;
+    auto ret = (uint32_t)0;
+    if (!KERN_POINTER_VALID(OSObject)) goto out;
+    auto const function = OSObjectFunc(OSObject, off_OSObject_GetRetainCount);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    ret = (uint32_t)kexecute(function, OSObject, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
+    return ret;
 }
 
 uint32_t OSString_GetLength(kptr_t OSString) {
-    auto OSString_GetLength = (uint32_t)0;
-    auto function = OSObjectFunc(OSString, off_OSString_GetLength);
-    if (KERN_POINTER_VALID(function)) {
-        OSString_GetLength = (uint32_t)kexecute(function, OSString, 0, 0, 0, 0, 0, 0);
-    }
-    return OSString_GetLength;
+    auto ret = (uint32_t)0;
+    if (!KERN_POINTER_VALID(OSString)) goto out;
+    auto const function = OSObjectFunc(OSString, off_OSString_GetLength);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    ret = (uint32_t)kexecute(function, OSString, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+out:;
+    return ret;
 }
 
 kptr_t OSString_CStringPtr(kptr_t OSString) {
-    auto OSString_CStringPtr = KPTR_NULL;
-    if (KERN_POINTER_VALID(OSString)) {
-        OSString_CStringPtr = ReadKernel64(OSString + 0x10);
-    }
-    return OSString_CStringPtr;
+    auto ret = KPTR_NULL;
+    if (!KERN_POINTER_VALID(OSString)) goto out;
+    ret = ReadKernel64(OSString + 0x10);
+out:;
+    return ret;
 }
 
 char *OSString_CopyString(kptr_t OSString) {
-    auto OSString_CopyString = (char *)NULL;
-    auto length = OSString_GetLength(OSString);
-    if (length != 0) {
-        auto str = (char *)malloc(length + 1);
-        if (str != NULL) {
-            str[length] = 0;
-            auto CStringPtr = OSString_CStringPtr(OSString);
-            if (KERN_POINTER_VALID(CStringPtr)) {
-                if (kread(CStringPtr, str, length) == length) {
-                    OSString_CopyString = strdup(str);
-                }
-            }
-            SafeFreeNULL(str);
-        }
-    }
-    return OSString_CopyString;
+    auto ret = (char *)NULL;
+    auto str = (char *)NULL;
+    if (!KERN_POINTER_VALID(OSString)) goto out;
+    auto const length = OSString_GetLength(OSString);
+    if (length <= 0) goto out;
+    str = (char *)malloc(length + 1);
+    if (str == NULL) goto out;
+    str[length] = 0;
+    auto const CStringPtr = OSString_CStringPtr(OSString);
+    if (!KERN_POINTER_VALID(CStringPtr)) goto out;
+    if (!rkbuffer(CStringPtr, str, length)) goto out;
+    ret = strdup(str);
+    if (ret == NULL) goto out;
+out:;
+    SafeFreeNULL(str);
+    return ret;
 }
 
 kptr_t OSUnserializeXML(const char *buffer) {
-    auto OSUnserializeXML = KPTR_NULL;
-    auto kstr = kstralloc(buffer);
-    if (KERN_POINTER_VALID(kstr)) {
-        auto error_kptr = KPTR_NULL;
-        OSUnserializeXML = kexecute(GETOFFSET(osunserializexml), kstr, error_kptr, 0, 0, 0, 0, 0);
-        if (OSUnserializeXML != KPTR_NULL) {
-            OSUnserializeXML = zm_fix_addr(OSUnserializeXML);
-        }
-        kstrfree(kstr);
-    }
-    return OSUnserializeXML;
+    auto ret = KPTR_NULL;
+    auto kstr = KPTR_NULL;
+    if (buffer == NULL) goto out;
+    auto const function = GETOFFSET(osunserializexml);
+    if (!KERN_POINTER_VALID(function)) goto out;
+    kstr = kstralloc(buffer);
+    if (!KERN_POINTER_VALID(kstr)) goto out;
+    auto const error_kptr = KPTR_NULL;
+    ret = kexecute(GETOFFSET(osunserializexml), kstr, error_kptr, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
+    if (ret != KPTR_NULL) ret = zm_fix_addr(ret);
+    if (!KERN_POINTER_VALID(ret)) goto out;
+out:;
+    if (KERN_POINTER_VALID(kstr)) kstrfree(kstr); kstr = KPTR_NULL;
+    return ret;
 }
 
 kptr_t get_exception_osarray(const char **exceptions) {
@@ -951,26 +1048,26 @@ char **copy_amfi_entitlements(kptr_t present) {
 }
 
 kptr_t getOSBool(bool value) {
-    auto OSBool = KPTR_NULL;
-    if (value) {
-        OSBool = ReadKernel64(GETOFFSET(OSBoolean_True));
-    } else {
-        OSBool = ReadKernel64(GETOFFSET(OSBoolean_True)) + sizeof(void *);
-    }
-    return OSBool;
+    auto ret = KPTR_NULL;
+    auto const symbol = GETOFFSET(OSBoolean_True);
+    if (!KERN_POINTER_VALID(symbol)) goto out;
+    auto OSBool = ReadKernel64(symbol);
+    if (!KERN_POINTER_VALID(OSBool)) goto out;
+    if (value) OSBool += sizeof(void *);
+out:;
+    return ret;
 }
 
-bool entitleProcess(kptr_t amfi_entitlements, const char *key, kptr_t val) {
-    auto entitleProcess = false;
-    if (KERN_POINTER_VALID(amfi_entitlements)) {
-        if (OSDictionary_GetItem(amfi_entitlements, key) != val) {
-            entitleProcess = OSDictionary_SetItem(amfi_entitlements, key, val);
-        }
-    }
-    return entitleProcess;
+bool entitle_process(kptr_t amfi_entitlements, const char *key, kptr_t val) {
+    auto ret = false;
+    if (!KERN_POINTER_VALID(amfi_entitlements) || key == NULL || !KERN_POINTER_VALID(val)) goto out;
+    if (OSDictionary_GetItem(amfi_entitlements, key) == val) ret = true;
+    if (!ret) ret = OSDictionary_SetItem(amfi_entitlements, key, val);
+out:;
+    return ret;
 }
 
-bool exceptionalizeProcess(kptr_t sandbox, kptr_t amfi_entitlements, const char **exceptions) {
+bool exceptionalize_process(kptr_t sandbox, kptr_t amfi_entitlements, const char **exceptions) {
     bool exceptionalizeProcess = true;
     if (KERN_POINTER_VALID(sandbox)) {
         for (auto exception = exceptions; *exception; exception++) {
@@ -1028,6 +1125,258 @@ bool exceptionalizeProcess(kptr_t sandbox, kptr_t amfi_entitlements, const char 
     return exceptionalizeProcess;
 }
 
+kptr_t get_amfi_entitlements(kptr_t cr_label) {
+    auto amfi_entitlements = KPTR_NULL;
+    if (!KERN_POINTER_VALID(cr_label)) goto out;
+    amfi_entitlements = ReadKernel64(cr_label + 0x8);
+    if (!KERN_POINTER_VALID(amfi_entitlements)) goto out;
+out:;
+    return amfi_entitlements;
+}
+
+kptr_t get_sandbox(kptr_t cr_label) {
+    auto sandbox = KPTR_NULL;
+    if (!KERN_POINTER_VALID(cr_label)) goto out;
+    sandbox = ReadKernel64(cr_label + 0x8 + 0x8);
+    if (!KERN_POINTER_VALID(sandbox)) goto out;
+out:;
+    return sandbox;
+}
+
+bool entitle_process_with_pid(pid_t pid, const char *key, kptr_t val) {
+    auto entitle_process_with_pid = true;
+    auto proc = proc_find(pid);
+    if (KERN_POINTER_VALID(proc)) {
+        LOG("%s: Found proc: " ADDR, __FUNCTION__, proc);
+        auto proc_ucred = ReadKernel64(proc + koffset(KSTRUCT_OFFSET_PROC_UCRED));
+        if (KERN_POINTER_VALID(proc_ucred)) {
+            LOG("%s: Found proc_ucred: " ADDR, __FUNCTION__, proc_ucred);
+            auto cr_label = ReadKernel64(proc_ucred + koffset(KSTRUCT_OFFSET_UCRED_CR_LABEL));
+            if (KERN_POINTER_VALID(cr_label)) {
+                LOG("%s: Found cr_label: " ADDR, __FUNCTION__, cr_label);
+                auto amfi_entitlements = get_amfi_entitlements(cr_label);
+                if (KERN_POINTER_VALID(amfi_entitlements)) {
+                    LOG("%s: Found amfi_entitlements: " ADDR, __FUNCTION__, amfi_entitlements);
+                    entitle_process_with_pid = entitle_process(amfi_entitlements, key, val);
+                } else {
+                    LOG("%s: Unable to find amfi_entitlements", __FUNCTION__);
+                    entitle_process_with_pid = false;
+                }
+            } else {
+                LOG("%s: Unable to find cr_label", __FUNCTION__);
+                entitle_process_with_pid = false;
+            }
+        } else {
+            LOG("%s: Unable to find proc_ucred", __FUNCTION__);
+            entitle_process_with_pid = false;
+        }
+        LOG("%s: Releasing proc: " ADDR, __FUNCTION__, proc);
+        proc_rele(proc);
+    } else {
+        LOG("%s: Unable to find proc", __FUNCTION__);
+        entitle_process_with_pid = false;
+    }
+    return entitle_process_with_pid;
+}
+
+bool remove_memory_limit() {
+    auto ret = false;
+    auto const pid = getpid();
+    auto const entitlement_key = "com.apple.private.memorystatus";
+    auto const entitlement_val = OSBoolTrue;
+    if (!KERN_POINTER_VALID(entitlement_val)) goto out;
+    if (!entitle_process_with_pid(pid, entitlement_key, entitlement_val)) goto out;
+    if (memorystatus_control(MEMORYSTATUS_CMD_SET_JETSAM_TASK_LIMIT, pid, 0, NULL, 0) != ERR_SUCCESS) goto out;
+    ret = true;
+out:;
+    return ret;
+}
+
+bool restore_kernel_task_port(task_t *out_kernel_task_port) {
+    auto restored_kernel_task_port = false;
+    auto kr = KERN_FAILURE;
+    auto kernel_task_port = (task_t *)NULL;
+    auto host = HOST_NULL;
+    if (out_kernel_task_port == NULL) goto out;
+    kernel_task_port = (task_t *)malloc(sizeof(task_t *));
+    if (kernel_task_port == NULL) goto out;
+    bzero(kernel_task_port, sizeof(task_t));
+    host = mach_host_self();
+    if (!MACH_PORT_VALID(host)) goto out;
+    kr = task_for_pid(mach_task_self(), 0, kernel_task_port);
+    if (kr != KERN_SUCCESS) kr = host_get_special_port(host, HOST_LOCAL_NODE, 4, kernel_task_port);
+    if (kr != KERN_SUCCESS) goto out;
+    if (!MACH_PORT_VALID(*kernel_task_port)) goto out;
+    *out_kernel_task_port = *kernel_task_port;
+    restored_kernel_task_port = true;
+out:;
+    SafeFreeNULL(kernel_task_port);
+    if (MACH_PORT_VALID(host)) mach_port_deallocate(mach_task_self(), host); host = HOST_NULL;
+    return restored_kernel_task_port;
+}
+
+bool restore_kernel_base(task_t kernel_task_port, uint64_t *out_kernel_base, uint64_t *out_kernel_slide) {
+    auto restored_kernel_base = false;
+    auto kr = KERN_FAILURE;
+    auto kernel_task_base = (kptr_t *)NULL;
+    auto kernel_task_slide = (uint64_t *)NULL;
+    auto task_dyld_info = (struct task_dyld_info *)NULL;
+    auto task_dyld_info_count = (mach_msg_type_number_t *)NULL;
+    if (out_kernel_base == NULL || out_kernel_slide == NULL) goto out;
+    kernel_task_base = (kptr_t *)malloc(sizeof(kptr_t));
+    if (kernel_task_base == NULL) goto out;
+    bzero(kernel_task_base, sizeof(kptr_t));
+    kernel_task_slide = (uint64_t *)malloc(sizeof(uint64_t));
+    if (kernel_task_slide == NULL) goto out;
+    bzero(kernel_task_slide, sizeof(uint64_t));
+    task_dyld_info = (struct task_dyld_info *)malloc(sizeof(struct task_dyld_info));
+    if (task_dyld_info == NULL) goto out;
+    bzero(task_dyld_info, sizeof(struct task_dyld_info));
+    task_dyld_info_count = (mach_msg_type_number_t *)malloc(sizeof(mach_msg_type_number_t));
+    if (task_dyld_info_count == NULL) goto out;
+    bzero(task_dyld_info_count, sizeof(mach_msg_type_number_t));
+    *task_dyld_info_count = TASK_DYLD_INFO_COUNT;
+    kr = task_info(kernel_task_port, TASK_DYLD_INFO, (task_info_t)task_dyld_info, task_dyld_info_count);
+    if (kr != KERN_SUCCESS) goto out;
+    if (task_dyld_info->all_image_info_size > MAX_KASLR_SLIDE) goto out;
+    *kernel_task_slide = task_dyld_info->all_image_info_size;
+    *kernel_task_base = *kernel_task_slide + STATIC_KERNEL_BASE_ADDRESS;
+    *out_kernel_base = *kernel_task_base;
+    *out_kernel_slide = *kernel_task_slide;
+    restored_kernel_base = true;
+out:;
+    SafeFreeNULL(kernel_task_base);
+    SafeFreeNULL(kernel_task_slide);
+    SafeFreeNULL(task_dyld_info);
+    SafeFreeNULL(task_dyld_info_count);
+    return restored_kernel_base;
+}
+
+bool restore_kernel_offset_cache(task_t kernel_task_port) {
+    auto restored_kernel_offset_cache = false;
+    auto kr = KERN_FAILURE;
+    auto task_dyld_info = (struct task_dyld_info *)NULL;
+    auto task_dyld_info_count = (mach_msg_type_number_t *)NULL;
+    auto offset_cache_addr = KPTR_NULL;
+    auto offset_cache_size_addr = KPTR_NULL;
+    auto offset_cache_size = (size_t *)NULL;
+    auto offset_cache_blob = (struct cache_blob *)NULL;
+    task_dyld_info = (struct task_dyld_info *)malloc(sizeof(struct task_dyld_info));
+    if (task_dyld_info == NULL) goto out;
+    bzero(task_dyld_info, sizeof(struct task_dyld_info));
+    task_dyld_info_count = (mach_msg_type_number_t *)malloc(sizeof(mach_msg_type_number_t));
+    if (task_dyld_info_count == NULL) goto out;
+    bzero(task_dyld_info_count, sizeof(mach_msg_type_number_t));
+    offset_cache_size = (size_t *)malloc(sizeof(size_t));
+    if (offset_cache_size == NULL) goto out;
+    bzero(offset_cache_size, sizeof(size_t));
+    *task_dyld_info_count = TASK_DYLD_INFO_COUNT;
+    kr = task_info(kernel_task_port, TASK_DYLD_INFO, (task_info_t)task_dyld_info, task_dyld_info_count);
+    if (kr != KERN_SUCCESS) goto out;
+    if (!KERN_POINTER_VALID(task_dyld_info->all_image_info_addr)) goto out;
+    offset_cache_addr = task_dyld_info->all_image_info_addr;
+    offset_cache_size_addr = offset_cache_addr + offsetof(struct cache_blob, size);
+    if (!rkbuffer(offset_cache_size_addr, offset_cache_size, sizeof(*offset_cache_size))) goto out;
+    offset_cache_blob = create_cache_blob(*offset_cache_size);
+    if (offset_cache_blob == NULL) goto out;
+    if (!rkbuffer(offset_cache_addr, offset_cache_blob, *offset_cache_size)) goto out;
+    import_cache_blob(offset_cache_blob);
+    if (KERN_POINTER_VALID(get_offset("OSBooleanTrue"))) set_offset("OSBooleanTrue", ReadKernel64(get_offset("OSBooleanTrue")));
+    if (KERN_POINTER_VALID(get_offset("OSBooleanTrue"))) set_offset("OSBooleanFalse", get_offset("OSBooleanTrue") + sizeof(void *));
+    restored_kernel_offset_cache = true;
+out:;
+    SafeFreeNULL(task_dyld_info);
+    SafeFreeNULL(task_dyld_info_count);
+    SafeFreeNULL(offset_cache_size);
+    SafeFreeNULL(offset_cache_blob);
+    return restored_kernel_offset_cache;
+}
+
+bool restore_file_offset_cache(const char *offset_cache_file_path, kptr_t *out_kernel_base, uint64_t *out_kernel_slide) {
+    auto restored_file_offset_cache = false;
+    auto offset_cache_file_name = (CFStringRef)NULL;
+    auto offset_cache_file_url = (CFURLRef)NULL;
+    auto offset_cache_file_data = (CFDataRef)NULL;
+    auto offset_cache_property_list = (CFPropertyListRef)NULL;
+    auto status = (Boolean)false;
+    auto offset_kernel_base = KPTR_NULL;
+    auto offset_kernel_slide = KPTR_NULL;
+    if (offset_cache_file_path == NULL || out_kernel_base == NULL || out_kernel_slide == NULL) goto out;
+    offset_cache_file_name = CFStringCreateWithCStringNoCopy(kCFAllocatorDefault, offset_cache_file_path, kCFStringEncodingUTF8, kCFAllocatorDefault);
+    if (offset_cache_file_name == NULL) goto out;
+    offset_cache_file_url = CFURLCreateWithFileSystemPath(kCFAllocatorDefault, offset_cache_file_name, kCFURLPOSIXPathStyle, false);
+    if (offset_cache_file_url == NULL) goto out;
+    status = CFURLCreateDataAndPropertiesFromResource(kCFAllocatorDefault, offset_cache_file_url, &offset_cache_file_data, NULL, NULL, NULL);
+    if (!status) goto out;
+    offset_cache_property_list = CFPropertyListCreateWithData(kCFAllocatorDefault, offset_cache_file_data, kCFPropertyListImmutable, NULL, NULL);
+    if (offset_cache_property_list == NULL) goto out;
+    if (CFGetTypeID(offset_cache_property_list) != CFDictionaryGetTypeID()) goto out;
+#define restore_offset(entry_name, out_offset) do { \
+    auto value = CFDictionaryGetValue(offset_cache_property_list, CFSTR(entry_name)); \
+    if (value == NULL) break; \
+    auto string = CFStringGetCStringPtr((CFStringRef)value, kCFStringEncodingUTF8); \
+    if (string == NULL) break; \
+    auto offset = strtoull(string, NULL, 16); \
+    if (!KERN_POINTER_VALID(offset)) break; \
+    out_offset = offset; \
+} while (false)
+#define restore_and_set_offset(entry_name, offset_name) do { \
+    auto restored_offset = KPTR_NULL; \
+    restore_offset(entry_name, restored_offset); \
+    set_offset(offset_name, restored_offset); \
+} while (false)
+    restore_offset("KernelBase", offset_kernel_base);
+    restore_offset("KernelSlide", offset_kernel_slide);
+    restore_and_set_offset("TrustChain", "trustcache");
+    restore_and_set_offset("OSBooleanTrue", "OSBooleanTrue");
+    restore_and_set_offset("OSBooleanFalse", "OSBooleanFalse");
+    restore_and_set_offset("OSUnserializeXML", "osunserializexml");
+    restore_and_set_offset("Smalloc", "smalloc");
+    restore_and_set_offset("AddRetGadget", "add_x0_x0_0x40_ret");
+    restore_and_set_offset("ZoneMapOffset", "zone_map_ref");
+    restore_and_set_offset("VfsContextCurrent", "vfs_context_current");
+    restore_and_set_offset("VnodeLookup", "vnode_lookup");
+    restore_and_set_offset("VnodePut", "vnode_put");
+    restore_and_set_offset("KernelTask", "kernel_task");
+    restore_and_set_offset("Shenanigans", "shenanigans");
+    restore_and_set_offset("LckMtxLock", "lck_mtx_lock");
+    restore_and_set_offset("LckMtxUnlock", "lck_mtx_unlock");
+    restore_and_set_offset("VnodeGetSnapshot", "vnode_get_snapshot");
+    restore_and_set_offset("FsLookupSnapshotMetadataByNameAndReturnName", "fs_lookup_snapshot_metadata_by_name_and_return_name");
+    restore_and_set_offset("PmapLoadTrustCache", "pmap_load_trust_cache");
+    restore_and_set_offset("APFSJhashGetVnode", "apfs_jhash_getvnode");
+    restore_and_set_offset("PacizaPointerL2TPDomainModuleStart", "paciza_pointer__l2tp_domain_module_start");
+    restore_and_set_offset("PacizaPointerL2TPDomainModuleStop", "paciza_pointer__l2tp_domain_module_stop");
+    restore_and_set_offset("L2TPDomainInited", "l2tp_domain_inited");
+    restore_and_set_offset("SysctlNetPPPL2TP", "sysctl__net_ppp_l2tp");
+    restore_and_set_offset("SysctlUnregisterOid", "sysctl_unregister_oid");
+    restore_and_set_offset("MovX0X4BrX5", "mov_x0_x4__br_x5");
+    restore_and_set_offset("MovX9X0BrX1", "mov_x9_x0__br_x1");
+    restore_and_set_offset("MovX10X3BrX6", "mov_x10_x3__br_x6");
+    restore_and_set_offset("KernelForgePaciaGadget", "kernel_forge_pacia_gadget");
+    restore_and_set_offset("KernelForgePacdaGadget", "kernel_forge_pacda_gadget");
+    restore_and_set_offset("IOUserClientVtable", "IOUserClient__vtable");
+    restore_and_set_offset("IORegistryEntryGetRegistryEntryID", "IORegistryEntry__getRegistryEntryID");
+    restore_and_set_offset("ProcFind", "proc_find");
+    restore_and_set_offset("ProcRele", "proc_rele");
+    restore_and_set_offset("ExtensionCreateFile", "extension_create_file");
+    restore_and_set_offset("ExtensionAdd", "extension_add");
+    restore_and_set_offset("ExtensionRelease", "extension_release");
+    restore_and_set_offset("Sfree", "sfree");
+    restore_and_set_offset("Sstrdup", "sstrdup");
+    restore_and_set_offset("Strlen", "strlen");
+#undef restore_offset
+#undef restore_and_set_offset
+    *out_kernel_base = offset_kernel_base;
+    *out_kernel_slide = offset_kernel_slide;
+    restored_file_offset_cache = true;
+out:;
+    CFSafeReleaseNULL(offset_cache_file_url);
+    CFSafeReleaseNULL(offset_cache_file_data);
+    CFSafeReleaseNULL(offset_cache_property_list);
+    return restored_file_offset_cache;
+}
+
 bool unrestrictProcess(pid_t pid) {
     bool unrestrictProcess = true;
     LOG("%s(%d): Unrestricting", __FUNCTION__, pid);
@@ -1070,13 +1419,13 @@ bool unrestrictProcess(pid_t pid) {
                 auto amfi_entitlements = get_amfi_entitlements(cr_label);
                 auto sandbox = get_sandbox(cr_label);
                 LOG("%s(%d): Entitling process with: %s", __FUNCTION__, pid, "com.apple.private.skip-library-validation");
-                entitleProcess(amfi_entitlements, "com.apple.private.skip-library-validation", OSBoolTrue);
+                entitle_process(amfi_entitlements, "com.apple.private.skip-library-validation", OSBoolTrue);
                 if (OPT(GET_TASK_ALLOW)) {
                     LOG("%s(%d): Entitling process with: %s", __FUNCTION__, pid, "get-task-allow");
-                    entitleProcess(amfi_entitlements, "get-task-allow", OSBoolTrue);
+                    entitle_process(amfi_entitlements, "get-task-allow", OSBoolTrue);
                 }
                 LOG("%s(%d): Exceptionalizing process with: %s", __FUNCTION__, pid, "abs_path_exceptions");
-                if (!exceptionalizeProcess(sandbox, amfi_entitlements, abs_path_exceptions)) {
+                if (!exceptionalize_process(sandbox, amfi_entitlements, abs_path_exceptions)) {
                     LOG("%s(%d): Unable to exceptionalize process", __FUNCTION__, pid);
                     unrestrictProcess = false;
                 }
@@ -1202,247 +1551,4 @@ bool revalidateProcessWithTaskPort(task_t task_port) {
         revalidateProcessWithTaskPort = revalidateProcess(pid);
     }
     return revalidateProcessWithTaskPort;
-}
-
-kptr_t get_amfi_entitlements(kptr_t cr_label) {
-    auto amfi_entitlements = KPTR_NULL;
-    amfi_entitlements = ReadKernel64(cr_label + 0x8);
-    return amfi_entitlements;
-}
-
-kptr_t get_sandbox(kptr_t cr_label) {
-    auto sandbox = KPTR_NULL;
-    sandbox = ReadKernel64(cr_label + 0x8 + 0x8);
-    return sandbox;
-}
-
-bool entitleProcessWithPid(pid_t pid, const char *key, kptr_t val) {
-    auto entitleProcessWithPid = true;
-    auto proc = proc_find(pid);
-    if (KERN_POINTER_VALID(proc)) {
-        LOG("%s: Found proc: " ADDR, __FUNCTION__, proc);
-        auto proc_ucred = ReadKernel64(proc + koffset(KSTRUCT_OFFSET_PROC_UCRED));
-        if (KERN_POINTER_VALID(proc_ucred)) {
-            LOG("%s: Found proc_ucred: " ADDR, __FUNCTION__, proc_ucred);
-            auto cr_label = ReadKernel64(proc_ucred + koffset(KSTRUCT_OFFSET_UCRED_CR_LABEL));
-            if (KERN_POINTER_VALID(cr_label)) {
-                LOG("%s: Found cr_label: " ADDR, __FUNCTION__, cr_label);
-                auto amfi_entitlements = get_amfi_entitlements(cr_label);
-                if (KERN_POINTER_VALID(amfi_entitlements)) {
-                    LOG("%s: Found amfi_entitlements: " ADDR, __FUNCTION__, amfi_entitlements);
-                    entitleProcessWithPid = entitleProcess(amfi_entitlements, key, val);
-                } else {
-                    LOG("%s: Unable to find amfi_entitlements", __FUNCTION__);
-                    entitleProcessWithPid = false;
-                }
-            } else {
-                LOG("%s: Unable to find cr_label", __FUNCTION__);
-                entitleProcessWithPid = false;
-            }
-        } else {
-            LOG("%s: Unable to find proc_ucred", __FUNCTION__);
-            entitleProcessWithPid = false;
-        }
-        LOG("%s: Releasing proc: " ADDR, __FUNCTION__, proc);
-        proc_rele(proc);
-    } else {
-        LOG("%s: Unable to find proc", __FUNCTION__);
-        entitleProcessWithPid = false;
-    }
-    return entitleProcessWithPid;
-}
-
-bool removeMemoryLimit() {
-    auto removeMemoryLimit = false;
-    if (entitleProcessWithPid(getpid(), "com.apple.private.memorystatus", OSBoolTrue)) {
-        if (memorystatus_control(MEMORYSTATUS_CMD_SET_JETSAM_TASK_LIMIT, getpid(), 0, NULL, 0) == 0) {
-            removeMemoryLimit = true;
-        }
-    }
-    return removeMemoryLimit;
-}
-
-bool restore_kernel_task_port(task_t *out_kernel_task_port) {
-    auto restored_kernel_task_port = false;
-    auto kr = KERN_FAILURE;
-    auto kernel_task_port = (task_t *)NULL;
-    auto host = HOST_NULL;
-    if (out_kernel_task_port == NULL) goto out;
-    kernel_task_port = (task_t *)malloc(sizeof(task_t *));
-    if (kernel_task_port == NULL) goto out;
-    bzero(kernel_task_port, sizeof(task_t));
-    host = mach_host_self();
-    if (!MACH_PORT_VALID(host)) goto out;
-    kr = task_for_pid(mach_task_self(), 0, kernel_task_port);
-    if (kr != KERN_SUCCESS) kr = host_get_special_port(host, HOST_LOCAL_NODE, 4, kernel_task_port);
-    if (kr != KERN_SUCCESS) goto out;
-    if (!MACH_PORT_VALID(*kernel_task_port)) goto out;
-    *out_kernel_task_port = *kernel_task_port;
-    restored_kernel_task_port = true;
-out:
-    SafeFreeNULL(kernel_task_port);
-    if (MACH_PORT_VALID(host)) mach_port_deallocate(mach_task_self(), host); host = HOST_NULL;
-    return restored_kernel_task_port;
-}
-
-bool restore_kernel_base(task_t kernel_task_port, uint64_t *out_kernel_base, uint64_t *out_kernel_slide) {
-    auto restored_kernel_base = false;
-    auto kr = KERN_FAILURE;
-    auto kernel_task_base = (kptr_t *)NULL;
-    auto kernel_task_slide = (uint64_t *)NULL;
-    auto task_dyld_info = (struct task_dyld_info *)NULL;
-    auto task_dyld_info_count = (mach_msg_type_number_t *)NULL;
-    if (out_kernel_base == NULL || out_kernel_slide == NULL) goto out;
-    kernel_task_base = (kptr_t *)malloc(sizeof(kptr_t));
-    if (kernel_task_base == NULL) goto out;
-    bzero(kernel_task_base, sizeof(kptr_t));
-    kernel_task_slide = (uint64_t *)malloc(sizeof(uint64_t));
-    if (kernel_task_slide == NULL) goto out;
-    bzero(kernel_task_slide, sizeof(uint64_t));
-    task_dyld_info = (struct task_dyld_info *)malloc(sizeof(struct task_dyld_info));
-    if (task_dyld_info == NULL) goto out;
-    bzero(task_dyld_info, sizeof(struct task_dyld_info));
-    task_dyld_info_count = (mach_msg_type_number_t *)malloc(sizeof(mach_msg_type_number_t));
-    if (task_dyld_info_count == NULL) goto out;
-    bzero(task_dyld_info_count, sizeof(mach_msg_type_number_t));
-    *task_dyld_info_count = TASK_DYLD_INFO_COUNT;
-    kr = task_info(kernel_task_port, TASK_DYLD_INFO, (task_info_t)task_dyld_info, task_dyld_info_count);
-    if (kr != KERN_SUCCESS) goto out;
-    if (task_dyld_info->all_image_info_size > MAX_KASLR_SLIDE) goto out;
-    *kernel_task_slide = task_dyld_info->all_image_info_size;
-    *kernel_task_base = *kernel_task_slide + STATIC_KERNEL_BASE_ADDRESS;
-    *out_kernel_base = *kernel_task_base;
-    *out_kernel_slide = *kernel_task_slide;
-    restored_kernel_base = true;
-out:
-    SafeFreeNULL(kernel_task_base);
-    SafeFreeNULL(kernel_task_slide);
-    SafeFreeNULL(task_dyld_info);
-    SafeFreeNULL(task_dyld_info_count);
-    return restored_kernel_base;
-}
-
-bool restore_kernel_offset_cache(task_t kernel_task_port) {
-    auto restored_kernel_offset_cache = false;
-    auto kr = KERN_FAILURE;
-    auto task_dyld_info = (struct task_dyld_info *)NULL;
-    auto task_dyld_info_count = (mach_msg_type_number_t *)NULL;
-    auto offset_cache_addr = KPTR_NULL;
-    auto offset_cache_size_addr = KPTR_NULL;
-    auto offset_cache_size = (size_t *)NULL;
-    auto offset_cache_blob = (struct cache_blob *)NULL;
-    task_dyld_info = (struct task_dyld_info *)malloc(sizeof(struct task_dyld_info));
-    if (task_dyld_info == NULL) goto out;
-    bzero(task_dyld_info, sizeof(struct task_dyld_info));
-    task_dyld_info_count = (mach_msg_type_number_t *)malloc(sizeof(mach_msg_type_number_t));
-    if (task_dyld_info_count == NULL) goto out;
-    bzero(task_dyld_info_count, sizeof(mach_msg_type_number_t));
-    offset_cache_size = (size_t *)malloc(sizeof(size_t));
-    if (offset_cache_size == NULL) goto out;
-    bzero(offset_cache_size, sizeof(size_t));
-    *task_dyld_info_count = TASK_DYLD_INFO_COUNT;
-    kr = task_info(kernel_task_port, TASK_DYLD_INFO, (task_info_t)task_dyld_info, task_dyld_info_count);
-    if (kr != KERN_SUCCESS) goto out;
-    if (!KERN_POINTER_VALID(task_dyld_info->all_image_info_addr)) goto out;
-    offset_cache_addr = task_dyld_info->all_image_info_addr;
-    offset_cache_size_addr = offset_cache_addr + offsetof(struct cache_blob, size);
-    if (!rkbuffer(offset_cache_size_addr, offset_cache_size, sizeof(*offset_cache_size))) goto out;
-    offset_cache_blob = create_cache_blob(*offset_cache_size);
-    if (offset_cache_blob == NULL) goto out;
-    if (!rkbuffer(offset_cache_addr, offset_cache_blob, *offset_cache_size)) goto out;
-    import_cache_blob(offset_cache_blob);
-    if (KERN_POINTER_VALID(get_offset("OSBooleanTrue"))) set_offset("OSBooleanTrue", ReadKernel64(get_offset("OSBooleanTrue")));
-    if (KERN_POINTER_VALID(get_offset("OSBooleanTrue"))) set_offset("OSBooleanFalse", get_offset("OSBooleanTrue") + sizeof(void *));
-    restored_kernel_offset_cache = true;
-out:
-    SafeFreeNULL(task_dyld_info);
-    SafeFreeNULL(task_dyld_info_count);
-    SafeFreeNULL(offset_cache_size);
-    SafeFreeNULL(offset_cache_blob);
-    return restored_kernel_offset_cache;
-}
-
-bool restore_file_offset_cache(const char *offset_cache_file_path, kptr_t *out_kernel_base, uint64_t *out_kernel_slide) {
-    auto restored_file_offset_cache = false;
-    auto offset_cache_file_name = (CFStringRef)NULL;
-    auto offset_cache_file_url = (CFURLRef)NULL;
-    auto offset_cache_file_data = (CFDataRef)NULL;
-    auto offset_cache_property_list = (CFPropertyListRef)NULL;
-    auto status = (Boolean)false;
-    auto offset_kernel_base = KPTR_NULL;
-    auto offset_kernel_slide = KPTR_NULL;
-    if (offset_cache_file_path == NULL || out_kernel_base == NULL || out_kernel_slide == NULL) goto out;
-    offset_cache_file_name = CFStringCreateWithCStringNoCopy(kCFAllocatorDefault, offset_cache_file_path, kCFStringEncodingUTF8, kCFAllocatorDefault);
-    if (offset_cache_file_name == NULL) goto out;
-    offset_cache_file_url = CFURLCreateWithFileSystemPath(kCFAllocatorDefault, offset_cache_file_name, kCFURLPOSIXPathStyle, false);
-    if (offset_cache_file_url == NULL) goto out;
-    status = CFURLCreateDataAndPropertiesFromResource(kCFAllocatorDefault, offset_cache_file_url, &offset_cache_file_data, NULL, NULL, NULL);
-    if (!status) goto out;
-    offset_cache_property_list = CFPropertyListCreateWithData(kCFAllocatorDefault, offset_cache_file_data, kCFPropertyListImmutable, NULL, NULL);
-    if (offset_cache_property_list == NULL) goto out;
-    if (CFGetTypeID(offset_cache_property_list) != CFDictionaryGetTypeID()) goto out;
-#define restore_offset(entry_name, out_offset) do { \
-    auto value = CFDictionaryGetValue(offset_cache_property_list, CFSTR(entry_name)); \
-    if (value == NULL) break; \
-    auto string = CFStringGetCStringPtr((CFStringRef)value, kCFStringEncodingUTF8); \
-    if (string == NULL) break; \
-    auto offset = strtoull(string, NULL, 16); \
-    if (!KERN_POINTER_VALID(offset)) break; \
-    out_offset = offset; \
-} while (false)
-#define restore_and_set_offset(entry_name, offset_name) do { \
-    auto restored_offset = KPTR_NULL; \
-    restore_offset(entry_name, restored_offset); \
-    set_offset(offset_name, restored_offset); \
-} while (false)
-    restore_offset("KernelBase", offset_kernel_base);
-    restore_offset("KernelSlide", offset_kernel_slide);
-    restore_and_set_offset("TrustChain", "trustcache");
-    restore_and_set_offset("OSBooleanTrue", "OSBooleanTrue");
-    restore_and_set_offset("OSBooleanFalse", "OSBooleanFalse");
-    restore_and_set_offset("OSUnserializeXML", "osunserializexml");
-    restore_and_set_offset("Smalloc", "smalloc");
-    restore_and_set_offset("AddRetGadget", "add_x0_x0_0x40_ret");
-    restore_and_set_offset("ZoneMapOffset", "zone_map_ref");
-    restore_and_set_offset("VfsContextCurrent", "vfs_context_current");
-    restore_and_set_offset("VnodeLookup", "vnode_lookup");
-    restore_and_set_offset("VnodePut", "vnode_put");
-    restore_and_set_offset("KernelTask", "kernel_task");
-    restore_and_set_offset("Shenanigans", "shenanigans");
-    restore_and_set_offset("LckMtxLock", "lck_mtx_lock");
-    restore_and_set_offset("LckMtxUnlock", "lck_mtx_unlock");
-    restore_and_set_offset("VnodeGetSnapshot", "vnode_get_snapshot");
-    restore_and_set_offset("FsLookupSnapshotMetadataByNameAndReturnName", "fs_lookup_snapshot_metadata_by_name_and_return_name");
-    restore_and_set_offset("PmapLoadTrustCache", "pmap_load_trust_cache");
-    restore_and_set_offset("APFSJhashGetVnode", "apfs_jhash_getvnode");
-    restore_and_set_offset("PacizaPointerL2TPDomainModuleStart", "paciza_pointer__l2tp_domain_module_start");
-    restore_and_set_offset("PacizaPointerL2TPDomainModuleStop", "paciza_pointer__l2tp_domain_module_stop");
-    restore_and_set_offset("L2TPDomainInited", "l2tp_domain_inited");
-    restore_and_set_offset("SysctlNetPPPL2TP", "sysctl__net_ppp_l2tp");
-    restore_and_set_offset("SysctlUnregisterOid", "sysctl_unregister_oid");
-    restore_and_set_offset("MovX0X4BrX5", "mov_x0_x4__br_x5");
-    restore_and_set_offset("MovX9X0BrX1", "mov_x9_x0__br_x1");
-    restore_and_set_offset("MovX10X3BrX6", "mov_x10_x3__br_x6");
-    restore_and_set_offset("KernelForgePaciaGadget", "kernel_forge_pacia_gadget");
-    restore_and_set_offset("KernelForgePacdaGadget", "kernel_forge_pacda_gadget");
-    restore_and_set_offset("IOUserClientVtable", "IOUserClient__vtable");
-    restore_and_set_offset("IORegistryEntryGetRegistryEntryID", "IORegistryEntry__getRegistryEntryID");
-    restore_and_set_offset("ProcFind", "proc_find");
-    restore_and_set_offset("ProcRele", "proc_rele");
-    restore_and_set_offset("ExtensionCreateFile", "extension_create_file");
-    restore_and_set_offset("ExtensionAdd", "extension_add");
-    restore_and_set_offset("ExtensionRelease", "extension_release");
-    restore_and_set_offset("Sfree", "sfree");
-    restore_and_set_offset("Sstrdup", "sstrdup");
-    restore_and_set_offset("Strlen", "strlen");
-#undef restore_offset
-#undef restore_and_set_offset
-    *out_kernel_base = offset_kernel_base;
-    *out_kernel_slide = offset_kernel_slide;
-    restored_file_offset_cache = true;
-out:
-    CFSafeReleaseNULL(offset_cache_file_url);
-    CFSafeReleaseNULL(offset_cache_file_data);
-    CFSafeReleaseNULL(offset_cache_property_list);
-    return restored_file_offset_cache;
 }

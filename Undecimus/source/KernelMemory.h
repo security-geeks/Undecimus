@@ -58,8 +58,8 @@ uint64_t ReadKernel64(kptr_t kaddr);
 
 #define wk32(kaddr, val) WriteKernel32(kaddr, val)
 #define wk64(kaddr, val) WriteKernel64(kaddr, val)
-void WriteKernel32(kptr_t kaddr, uint32_t val);
-void WriteKernel64(kptr_t kaddr, uint64_t val);
+bool WriteKernel32(kptr_t kaddr, uint32_t val);
+bool WriteKernel64(kptr_t kaddr, uint64_t val);
 
 bool wkbuffer(kptr_t kaddr, void* buffer, size_t length);
 bool rkbuffer(kptr_t kaddr, void* buffer, size_t length);
