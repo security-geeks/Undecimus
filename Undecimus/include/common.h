@@ -8,6 +8,7 @@
 #ifdef __OBJC__
 #include <Foundation/Foundation.h>
 #define RAWLOG(str, args...) do { NSLog(@str, ##args); } while(false)
+#define localize(x) NSLocalizedString(x, @"")
 #else
 #include <CoreFoundation/CoreFoundation.h>
 extern void NSLog(CFStringRef, ...);

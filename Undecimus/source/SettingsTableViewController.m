@@ -89,11 +89,11 @@
     [self.KernelExploitSegmentedControl setEnabled:supportsExploit(mach_swap_exploit) forSegmentAtIndex:mach_swap_exploit];
     [self.KernelExploitSegmentedControl setEnabled:supportsExploit(mach_swap_2_exploit) forSegmentAtIndex:mach_swap_2_exploit];
     [self.OpenCydiaButton setEnabled:[[UIApplication sharedApplication] canOpenURL:[NSURL URLWithString:@"cydia://"]]];
-    [self.ExpiryLabel setPlaceholder:[NSString stringWithFormat:@"%d %@", (int)[[SettingsTableViewController provisioningProfileAtPath:[[NSBundle mainBundle] pathForResource:@"embedded" ofType:@"mobileprovision"]][@"ExpirationDate"] timeIntervalSinceDate:[NSDate date]] / 86400, NSLocalizedString(@"Days", nil)]];
+    [self.ExpiryLabel setPlaceholder:[NSString stringWithFormat:@"%d %@", (int)[[SettingsTableViewController provisioningProfileAtPath:[[NSBundle mainBundle] pathForResource:@"embedded" ofType:@"mobileprovision"]][@"ExpirationDate"] timeIntervalSinceDate:[NSDate date]] / 86400, localize(@"Days")]];
     [self.OverwriteBootNonceSwitch setOn:(BOOL)prefs->overwrite_boot_nonce];
     [self.ExportKernelTaskPortSwitch setOn:(BOOL)prefs->export_kernel_task_port];
     [self.RestoreRootFSSwitch setOn:(BOOL)prefs->restore_rootfs];
-    [self.UptimeLabel setPlaceholder:[NSString stringWithFormat:@"%d %@", (int)getUptime() / 86400, NSLocalizedString(@"Days", nil)]];
+    [self.UptimeLabel setPlaceholder:[NSString stringWithFormat:@"%d %@", (int)getUptime() / 86400, localize(@"Days")]];
     [self.IncreaseMemoryLimitSwitch setOn:(BOOL)prefs->increase_memory_limit];
     [self.installSSHSwitch setOn:(BOOL)prefs->install_openssh];
     [self.installCydiaSwitch setOn:(BOOL)prefs->install_cydia];
@@ -142,8 +142,8 @@
         set_prefs(prefs);
         release_prefs(&prefs);
     } else {
-        auto const alertController = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Invalid Entry", nil) message:NSLocalizedString(@"The boot nonce entered could not be parsed", nil) preferredStyle:UIAlertControllerStyleAlert];
-        auto const OK = [UIAlertAction actionWithTitle:NSLocalizedString(@"OK", nil) style:UIAlertActionStyleDefault handler:nil];
+        auto const alertController = [UIAlertController alertControllerWithTitle:localize(@"Invalid Entry") message:localize(@"The boot nonce entered could not be parsed") preferredStyle:UIAlertControllerStyleAlert];
+        auto const OK = [UIAlertAction actionWithTitle:localize(@"OK") style:UIAlertActionStyleDefault handler:nil];
         [alertController addAction:OK];
         [self presentViewController:alertController animated:YES completion:nil];
     }
@@ -176,9 +176,8 @@
 
 - (IBAction)tappedOnRestart:(id)sender {
     auto const block = ^(void) {
-        NOTICE(NSLocalizedString(@"The device will be restarted.", nil), true, false);
+        notice(localize(@"The device will be restarted."), true, false);
         auto const support = recommendedRestartSupport();
-        _assert(support != -1, message, true);
         switch (support) {
             case necp_exploit: {
                 necp_die();
@@ -235,26 +234,26 @@
 }
 
 - (IBAction)tappedOnCopyNonce:(id)sender{
-    auto const copyBootNonceAlert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Copy boot nonce?", nil) message:NSLocalizedString(@"Would you like to copy nonce generator to clipboard?", nil) preferredStyle:UIAlertControllerStyleAlert];
-    auto const copyAction = [UIAlertAction actionWithTitle:NSLocalizedString(@"Yes", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+    auto const copyBootNonceAlert = [UIAlertController alertControllerWithTitle:localize(@"Copy boot nonce?") message:localize(@"Would you like to copy nonce generator to clipboard?") preferredStyle:UIAlertControllerStyleAlert];
+    auto const copyAction = [UIAlertAction actionWithTitle:localize(@"Yes") style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
         auto prefs = copy_prefs();
         [[UIPasteboard generalPasteboard] setString:@(prefs->boot_nonce)];
         release_prefs(&prefs);
     }];
-    auto const noAction = [UIAlertAction actionWithTitle:NSLocalizedString(@"No", nil) style:UIAlertActionStyleCancel handler:nil];
+    auto const noAction = [UIAlertAction actionWithTitle:localize(@"No") style:UIAlertActionStyleCancel handler:nil];
     [copyBootNonceAlert addAction:copyAction];
     [copyBootNonceAlert addAction:noAction];
     [self presentViewController:copyBootNonceAlert animated:TRUE completion:nil];
 }
 
 - (IBAction)tappedOnCopyECID:(id)sender {
-    auto const copyBootNonceAlert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Copy ECID?", nil) message:NSLocalizedString(@"Would you like to ECID to clipboard?", nil) preferredStyle:UIAlertControllerStyleAlert];
-    auto const copyAction = [UIAlertAction actionWithTitle:NSLocalizedString(@"Yes", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+    auto const copyBootNonceAlert = [UIAlertController alertControllerWithTitle:localize(@"Copy ECID?") message:localize(@"Would you like to ECID to clipboard?") preferredStyle:UIAlertControllerStyleAlert];
+    auto const copyAction = [UIAlertAction actionWithTitle:localize(@"Yes") style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
         auto prefs = copy_prefs();
         [[UIPasteboard generalPasteboard] setString:hexFromInt(@(prefs->ecid).integerValue)];
         release_prefs(&prefs);
     }];
-    auto const noAction = [UIAlertAction actionWithTitle:NSLocalizedString(@"No", nil) style:UIAlertActionStyleCancel handler:nil];
+    auto const noAction = [UIAlertAction actionWithTitle:localize(@"No") style:UIAlertActionStyleCancel handler:nil];
     [copyBootNonceAlert addAction:copyAction];
     [copyBootNonceAlert addAction:noAction];
     [self presentViewController:copyBootNonceAlert animated:TRUE completion:nil];
@@ -264,11 +263,11 @@
     auto const block = ^(void) {
         auto const update = [NSString stringWithContentsOfURL:[NSURL URLWithString:@"https://github.com/pwn20wndstuff/Undecimus/raw/master/Update.txt"] encoding:NSUTF8StringEncoding error:nil];
         if (update == nil) {
-            NOTICE(NSLocalizedString(@"Failed to check for update.", nil), true, false);
+            notice(localize(@"Failed to check for update."), true, false);
         } else if ([update compare:appVersion() options:NSNumericSearch] == NSOrderedDescending) {
-            NOTICE(NSLocalizedString(@"An update is available.", nil), true, false);
+            notice(localize(@"An update is available."), true, false);
         } else {
-            NOTICE(NSLocalizedString(@"Already up to date.", nil), true, false);
+            notice(localize(@"Already up to date."), true, false);
         }
     };
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0ul), block);
@@ -337,15 +336,13 @@
 
 - (IBAction)tappedRestartSpringBoard:(id)sender {
     auto const block = ^(void) {
-        SETMESSAGE(NSLocalizedString(@"Failed to restart SpringBoard.", nil));
-        NOTICE(NSLocalizedString(@"SpringBoard will be restarted.", nil), true, false);
+        notice(localize(@"SpringBoard will be restarted."), true, false);
         auto const support = recommendedRespringSupport();
-        _assert(support != -1, message, true);
         switch (support) {
             case deja_xnu_exploit: {
                 auto const bb_tp = hid_event_queue_exploit();
-                _assert(MACH_PORT_VALID(bb_tp), message, true);
-                _assert(thread_call_remote(bb_tp, exit, 1, REMOTE_LITERAL(EXIT_SUCCESS)) == ERR_SUCCESS, message, true);
+                _assert(MACH_PORT_VALID(bb_tp), localize(@"Unable to get task port for backboardd."), true);
+                _assert(thread_call_remote(bb_tp, exit, 1, REMOTE_LITERAL(EXIT_SUCCESS)) == ERR_SUCCESS, localize(@"Unable to make backboardd exit."), true);
                 break;
             }
             default:
@@ -358,7 +355,7 @@
 
 - (IBAction)tappedOnCleanDiagnosticsData:(id)sender {
     cleanLogs();
-    NOTICE(NSLocalizedString(@"Cleaned diagnostics data.", nil), false, false);
+    notice(localize(@"Cleaned diagnostics data."), false, false);
 }
 
 - (IBAction)hideLogWindowSwitchTriggered:(id)sender {
@@ -368,7 +365,7 @@
     release_prefs(&prefs);
     [self reloadData];
     auto const block = ^(void) {
-        NOTICE(NSLocalizedString(@"Preference was changed. The app will now exit.", nil), true, false);
+        notice(localize(@"Preference was changed. The app will now exit."), true, false);
         exit(EXIT_SUCCESS);
     };
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0ul), block);
@@ -409,7 +406,7 @@
 - (IBAction)tappedOnResetAppPreferences:(id)sender {
     auto const block = ^(void) {
         reset_prefs();
-        NOTICE(NSLocalizedString(@"Preferences were reset. The app will now exit.", nil), true, false);
+        notice(localize(@"Preferences were reset. The app will now exit."), true, false);
         exit(EXIT_SUCCESS);
     };
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0ul), block);

@@ -50,7 +50,7 @@ bool init_kexecute()
     if (!MACH_PORT_VALID(kernel_task_port)) return false;
     current_task = ReadKernel64(task_self_addr() + koffset(KSTRUCT_OFFSET_IPC_PORT_IP_KOBJECT));
     if (!KERN_POINTER_VALID(current_task)) return false;
-    kernel_task = ReadKernel64(GETOFFSET(kernel_task));
+    kernel_task = ReadKernel64(getoffset(kernel_task));
     if (!KERN_POINTER_VALID(kernel_task)) return false;
     if (!kernel_call_init()) return false;
 #else
@@ -95,7 +95,7 @@ bool init_kexecute()
     // Now the userclient port we have will look into our fake user client rather than the old one
 
     // Replace IOUserClient::getExternalTrapForIndex with our ROP gadget (add x0, x0, #0x40; ret;)
-    WriteKernel64(fake_vtable + 8 * 0xB7, GETOFFSET(add_x0_x0_0x40_ret));
+    WriteKernel64(fake_vtable + 8 * 0xB7, getoffset(add_x0_x0_0x40_ret));
 
 #endif
     pthread_mutex_init(&kexecute_lock, NULL);

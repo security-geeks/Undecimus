@@ -12,9 +12,6 @@
 
 #define __FILENAME__ (__builtin_strrchr(__FILE__, '/') ? __builtin_strrchr(__FILE__, '/') + 1 : __FILE__)
 
-static NSString *message = nil;
-#define SETMESSAGE(msg) (message = msg)
-
 #define _assert(test, message, fatal) do \
     if (!(test)) { \
         int saved_errno = errno; \
@@ -34,7 +31,7 @@ static NSString *message = nil;
     } \
 while (false)
 
-#define NOTICE(msg, wait, destructive) showAlert(@"Notice", msg, wait, destructive)
+#define notice(msg, wait, destructive) showAlert(@"Notice", msg, wait, destructive)
 
 @interface JailbreakViewController : UIViewController
 @property (weak, nonatomic) IBOutlet UIButton *goButton;

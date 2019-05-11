@@ -179,7 +179,7 @@ mach_port_t fake_host_priv()
 
 kptr_t get_kernel_proc_struct_addr() {
     auto ret = KPTR_NULL;
-    auto const symbol = GETOFFSET(kernel_task);
+    auto const symbol = getoffset(kernel_task);
     if (!KERN_POINTER_VALID(symbol)) goto out;
     auto const task = ReadKernel64(symbol);
     if (!KERN_POINTER_VALID(task)) goto out;
@@ -293,7 +293,7 @@ kptr_t zm_fix_addr(kptr_t addr) {
     } kmap_hdr_t;
     auto zm_fixed_addr = KPTR_NULL;
     auto zm_hdr = (kmap_hdr_t *)NULL;
-    auto const symbol = GETOFFSET(zone_map_ref);
+    auto const symbol = getoffset(zone_map_ref);
     if (!KERN_POINTER_VALID(symbol)) goto out;
     zm_hdr = (kmap_hdr_t *)malloc(sizeof(kmap_hdr_t));
     if (zm_hdr == NULL) goto out;
@@ -328,7 +328,7 @@ int (*pmap_load_trust_cache)(kptr_t kernel_trust, size_t length) = NULL;
 int _pmap_load_trust_cache(kptr_t kernel_trust, size_t length) {
     auto ret = -1;
     if (!KERN_POINTER_VALID(kernel_trust)) goto out;
-    auto const function = GETOFFSET(pmap_load_trust_cache);
+    auto const function = getoffset(pmap_load_trust_cache);
     if (!KERN_POINTER_VALID(function)) goto out;
     ret = (int)kexecute(function, kernel_trust, (kptr_t)length, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
 out:;
@@ -447,7 +447,7 @@ out:;
 size_t kstrlen(kptr_t ptr) {
     auto size = SIZE_NULL;
     if (!KERN_POINTER_VALID(ptr)) goto out;
-    auto const function = GETOFFSET(strlen);
+    auto const function = getoffset(strlen);
     if (!KERN_POINTER_VALID(function)) goto out;
     size = (size_t)kexecute(function, ptr, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
 out:;
@@ -488,7 +488,7 @@ kptr_t sstrdup(const char *str) {
     auto ret = KPTR_NULL;
     auto kstr = KPTR_NULL;
     if (str == NULL) goto out;
-    auto const function = GETOFFSET(sstrdup);
+    auto const function = getoffset(sstrdup);
     if (!KERN_POINTER_VALID(function)) goto out;
     kstr = kstralloc(str);
     if (!KERN_POINTER_VALID(kstr)) goto out;
@@ -501,7 +501,7 @@ out:;
 
 kptr_t smalloc(size_t size) {
     auto ret = KPTR_NULL;
-    auto const function = GETOFFSET(smalloc);
+    auto const function = getoffset(smalloc);
     if (!KERN_POINTER_VALID(function)) goto out;
     ret = kexecute(function, (kptr_t)size, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
     if (ret != KPTR_NULL) ret = zm_fix_addr(ret);
@@ -511,7 +511,7 @@ out:;
 
 void sfree(kptr_t ptr) {
     if (!KERN_POINTER_VALID(ptr)) goto out;
-    auto const function = GETOFFSET(sfree);
+    auto const function = getoffset(sfree);
     if (!KERN_POINTER_VALID(function)) goto out;
     kexecute(function, ptr, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
 out:;
@@ -521,7 +521,7 @@ int extension_create_file(kptr_t saveto, kptr_t sb, const char *path, size_t pat
     auto ret = -1;
     auto kstr = KPTR_NULL;
     if (!KERN_POINTER_VALID(saveto) || !KERN_POINTER_VALID(sb) || path == NULL || path_len <= 0) goto out;
-    auto const function = GETOFFSET(extension_create_file);
+    auto const function = getoffset(extension_create_file);
     if (!KERN_POINTER_VALID(function)) goto out;
     kstr = kstralloc(path);
     if (!KERN_POINTER_VALID(kstr)) goto out;
@@ -534,7 +534,7 @@ out:;
 int extension_create_mach(kptr_t saveto, kptr_t sb, const char *name, uint32_t subtype) {
     auto ret = -1;
     auto kstr = KPTR_NULL;
-    auto const function = GETOFFSET(extension_create_mach);
+    auto const function = getoffset(extension_create_mach);
     if (!KERN_POINTER_VALID(function)) goto out;
     kstr = KPTR_NULL;
     if (!KERN_POINTER_VALID(saveto) || !KERN_POINTER_VALID(sb) || name == NULL) goto out;
@@ -550,7 +550,7 @@ int extension_add(kptr_t ext, kptr_t sb, const char *desc) {
     auto ret = -1;
     auto kstr = KPTR_NULL;
     if (!KERN_POINTER_VALID(ext) || !KERN_POINTER_VALID(sb) || desc == NULL) goto out;
-    auto const function = GETOFFSET(extension_add);
+    auto const function = getoffset(extension_add);
     if (!KERN_POINTER_VALID(function)) goto out;
     kstr = kstralloc(desc);
     if (!KERN_POINTER_VALID(kstr)) goto out;
@@ -562,7 +562,7 @@ out:;
 
 void extension_release(kptr_t ext) {
     if (!KERN_POINTER_VALID(ext)) goto out;
-    auto const function = GETOFFSET(extension_release);
+    auto const function = getoffset(extension_release);
     if (!KERN_POINTER_VALID(function)) goto out;
     kexecute(function, ext, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
 out:;
@@ -570,7 +570,7 @@ out:;
 
 void extension_destroy(kptr_t ext) {
     if (!KERN_POINTER_VALID(ext)) goto out;
-    auto const function = GETOFFSET(extension_destroy);
+    auto const function = getoffset(extension_destroy);
     if (!KERN_POINTER_VALID(function)) goto out;
     kexecute(function, ext, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
 out:;
@@ -610,7 +610,7 @@ out:;
 
 kptr_t proc_find(pid_t pid) {
     auto ret = KPTR_NULL;
-    auto const function = GETOFFSET(proc_find);
+    auto const function = getoffset(proc_find);
     if (!KERN_POINTER_VALID(function)) goto out;
     ret = kexecute(function, (kptr_t)pid, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
     if (ret != KPTR_NULL) ret = zm_fix_addr(ret);
@@ -620,7 +620,7 @@ out:;
 
 void proc_rele(kptr_t proc) {
     if (!KERN_POINTER_VALID(proc)) goto out;
-    auto const function = GETOFFSET(proc_rele);
+    auto const function = getoffset(proc_rele);
     if (!KERN_POINTER_VALID(function)) goto out;
     kexecute(function, proc, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
 out:;
@@ -628,7 +628,7 @@ out:;
 
 void proc_lock(kptr_t proc) {
     if (!KERN_POINTER_VALID(proc)) goto out;
-    auto const function = GETOFFSET(proc_lock);
+    auto const function = getoffset(proc_lock);
     if (!KERN_POINTER_VALID(function)) goto out;
     kexecute(function, proc, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
 out:;
@@ -636,7 +636,7 @@ out:;
 
 void proc_unlock(kptr_t proc) {
     if (!KERN_POINTER_VALID(proc)) goto out;
-    auto const function = GETOFFSET(proc_unlock);
+    auto const function = getoffset(proc_unlock);
     if (!KERN_POINTER_VALID(function)) goto out;
     kexecute(function, proc, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
 out:;
@@ -644,7 +644,7 @@ out:;
 
 void proc_ucred_lock(kptr_t proc) {
     if (!KERN_POINTER_VALID(proc)) goto out;
-    auto const function = GETOFFSET(proc_ucred_lock);
+    auto const function = getoffset(proc_ucred_lock);
     if (!KERN_POINTER_VALID(function)) goto out;
     kexecute(function, proc, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
 out:;
@@ -652,7 +652,7 @@ out:;
 
 void proc_ucred_unlock(kptr_t proc) {
     if (!KERN_POINTER_VALID(proc)) goto out;
-    auto const function = GETOFFSET(proc_ucred_unlock);
+    auto const function = getoffset(proc_ucred_unlock);
     if (!KERN_POINTER_VALID(function)) goto out;
     kexecute(function, proc, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
 out:;
@@ -660,7 +660,7 @@ out:;
 
 void vnode_lock(kptr_t vp) {
     if (!KERN_POINTER_VALID(vp)) goto out;
-    auto const function = GETOFFSET(vnode_lock);
+    auto const function = getoffset(vnode_lock);
     if (!KERN_POINTER_VALID(function)) goto out;
     kexecute(function, vp, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
 out:;
@@ -668,7 +668,7 @@ out:;
 
 void vnode_unlock(kptr_t vp) {
     if (!KERN_POINTER_VALID(vp)) goto out;
-    auto const function = GETOFFSET(vnode_unlock);
+    auto const function = getoffset(vnode_unlock);
     if (!KERN_POINTER_VALID(function)) goto out;
     kexecute(function, vp, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
 out:;
@@ -676,7 +676,7 @@ out:;
 
 void mount_lock(kptr_t mp) {
     if (!KERN_POINTER_VALID(mp)) goto out;
-    auto const function = GETOFFSET(mount_lock);
+    auto const function = getoffset(mount_lock);
     if (!KERN_POINTER_VALID(function)) goto out;
     kexecute(function, mp, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
 out:;
@@ -684,7 +684,7 @@ out:;
 
 void mount_unlock(kptr_t mp) {
     if (!KERN_POINTER_VALID(mp)) goto out;
-    auto const function = GETOFFSET(mount_unlock);
+    auto const function = getoffset(mount_unlock);
     if (!KERN_POINTER_VALID(function)) goto out;
     kexecute(function, mp, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
 out:;
@@ -692,7 +692,7 @@ out:;
 
 void task_set_platform_binary(kptr_t task, boolean_t is_platform) {
     if (!KERN_POINTER_VALID(task)) goto out;
-    auto const function = GETOFFSET(task_set_platform_binary);
+    auto const function = getoffset(task_set_platform_binary);
     if (!KERN_POINTER_VALID(function)) goto out;
     kexecute(function, task, (kptr_t)is_platform, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
 out:;
@@ -700,7 +700,7 @@ out:;
 
 int chgproccnt(uid_t uid, int diff) {
     auto ret = -1;
-    auto const function = GETOFFSET(chgproccnt);
+    auto const function = getoffset(chgproccnt);
     if (!KERN_POINTER_VALID(function)) goto out;
     ret = (int)kexecute(function, (kptr_t)uid, (kptr_t)diff, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
 out:;
@@ -709,7 +709,7 @@ out:;
 
 void kauth_cred_ref(kptr_t cred) {
     if (!KERN_POINTER_VALID(cred)) goto out;
-    auto const function = GETOFFSET(kauth_cred_ref);
+    auto const function = getoffset(kauth_cred_ref);
     if (!KERN_POINTER_VALID(function)) goto out;
     kexecute(function, cred, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
 out:;
@@ -717,7 +717,7 @@ out:;
 
 void kauth_cred_unref(kptr_t cred) {
     if (!KERN_POINTER_VALID(cred)) goto out;
-    auto const function = GETOFFSET(kauth_cred_unref);
+    auto const function = getoffset(kauth_cred_unref);
     if (!KERN_POINTER_VALID(function)) goto out;
     kexecute(function, cred, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
 out:;
@@ -725,7 +725,7 @@ out:;
 
 kptr_t vfs_context_current() {
     auto ret = KPTR_NULL;
-    auto const function = GETOFFSET(vfs_context_current);
+    auto const function = getoffset(vfs_context_current);
     if (!KERN_POINTER_VALID(function)) goto out;
     ret = kexecute(function, (kptr_t)1, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
     if (ret != KPTR_NULL) ret = zm_fix_addr(ret);
@@ -739,7 +739,7 @@ int vnode_lookup(const char *path, int flags, kptr_t *vpp, kptr_t ctx) {
     auto vpp_kptr_size = SIZE_NULL;
     auto vpp_kptr = KPTR_NULL;
     if (path == NULL || vpp == NULL || !KERN_POINTER_VALID(ctx)) goto out;
-    auto const function = GETOFFSET(vnode_lookup);
+    auto const function = getoffset(vnode_lookup);
     if (!KERN_POINTER_VALID(function)) goto out;
     kstr = kstralloc(path);
     if (!KERN_POINTER_VALID(kstr)) goto out;
@@ -757,7 +757,7 @@ out:;
 int vnode_put(kptr_t vp) {
     auto ret = -1;
     if (!KERN_POINTER_VALID(vp)) goto out;
-    auto const function = GETOFFSET(vnode_put);
+    auto const function = getoffset(vnode_put);
     if (!KERN_POINTER_VALID(function)) goto out;
     ret = (int)kexecute(function, vp, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL, KPTR_NULL);
 out:;
@@ -962,7 +962,7 @@ kptr_t OSUnserializeXML(const char *buffer) {
     auto ret = KPTR_NULL;
     auto kstr = KPTR_NULL;
     if (buffer == NULL) goto out;
-    auto const function = GETOFFSET(osunserializexml);
+    auto const function = getoffset(osunserializexml);
     if (!KERN_POINTER_VALID(function)) goto out;
     kstr = kstralloc(buffer);
     if (!KERN_POINTER_VALID(kstr)) goto out;
@@ -1055,7 +1055,7 @@ char **copy_amfi_entitlements(kptr_t present) {
 
 kptr_t getOSBool(bool value) {
     auto ret = KPTR_NULL;
-    auto const symbol = GETOFFSET(OSBoolean_True);
+    auto const symbol = getoffset(OSBoolean_True);
     if (!KERN_POINTER_VALID(symbol)) goto out;
     auto OSBool = ReadKernel64(symbol);
     if (!KERN_POINTER_VALID(OSBool)) goto out;
@@ -1455,7 +1455,7 @@ bool set_hsp4(task_t port) {
     host = mach_host_self();
     if (!MACH_PORT_VALID(host)) goto out;
     auto const sizeof_task = 0x1000;
-    auto const kernel_task_offset = GETOFFSET(kernel_task);
+    auto const kernel_task_offset = getoffset(kernel_task);
     if (!KERN_POINTER_VALID(kernel_task_offset)) goto out;
     auto const kernel_task_addr = ReadKernel64(kernel_task_offset);
     if (!KERN_POINTER_VALID(kernel_task_addr)) goto out;
@@ -1465,7 +1465,7 @@ bool set_hsp4(task_t port) {
     if (kr != KERN_SUCCESS) goto out;
     kr = mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &km_fake_task_port);
     if (kr != KERN_SUCCESS) goto out;
-    auto const zone_map_offset = GETOFFSET(zone_map_ref);
+    auto const zone_map_offset = getoffset(zone_map_ref);
     if (!KERN_POINTER_VALID(zone_map_offset)) goto out;
     auto const zone_map = ReadKernel64(zone_map_offset);
     if (!KERN_POINTER_VALID(zone_map)) goto out;
@@ -1537,7 +1537,7 @@ kptr_t get_vnode_for_snapshot(int fd, char *name) {
     if (!KERN_POINTER_VALID(ndp_buf)) goto out;
     auto const vfs_context = vfs_context_current();
     if (!KERN_POINTER_VALID(vfs_context)) goto out;
-    if (kexecute(GETOFFSET(vnode_get_snapshot), fd, rvpp_ptr, sdvpp_ptr, (kptr_t)name, ndp_buf, 2, vfs_context) != 0) goto out;
+    if (kexecute(getoffset(vnode_get_snapshot), fd, rvpp_ptr, sdvpp_ptr, (kptr_t)name, ndp_buf, 2, vfs_context) != 0) goto out;
     sdvpp = ReadKernel64(sdvpp_ptr);
     if (!KERN_POINTER_VALID(sdvpp_ptr)) goto out;
     auto const sdvpp_v_mount = ReadKernel64(sdvpp + koffset(KSTRUCT_OFFSET_VNODE_V_MOUNT));
@@ -1551,10 +1551,10 @@ kptr_t get_vnode_for_snapshot(int fd, char *name) {
     ndp_old_name = ReadKernel64(ndp_buf + 336 + 40);
     if (!KERN_POINTER_VALID(ndp_old_name)) goto out;
     auto const ndp_old_name_len = ReadKernel32(ndp_buf + 336 + 48);
-    if (kexecute(GETOFFSET(fs_lookup_snapshot_metadata_by_name_and_return_name), sdvpp_v_mount_mnt_data, ndp_old_name, ndp_old_name_len, snap_meta_ptr, old_name_ptr, 0, 0) != 0) goto out;
+    if (kexecute(getoffset(fs_lookup_snapshot_metadata_by_name_and_return_name), sdvpp_v_mount_mnt_data, ndp_old_name, ndp_old_name_len, snap_meta_ptr, old_name_ptr, 0, 0) != 0) goto out;
     auto const snap_meta = ReadKernel64(snap_meta_ptr);
     if (!KERN_POINTER_VALID(snap_meta)) goto out;
-    snap_vnode = kexecute(GETOFFSET(apfs_jhash_getvnode), sdvpp_v_mount_mnt_data, ReadKernel32(sdvpp_v_mount_mnt_data + 440), ReadKernel64(snap_meta + 8), 1, 0, 0, 0);
+    snap_vnode = kexecute(getoffset(apfs_jhash_getvnode), sdvpp_v_mount_mnt_data, ReadKernel32(sdvpp_v_mount_mnt_data + 440), ReadKernel64(snap_meta + 8), 1, 0, 0, 0);
     if (snap_vnode != KPTR_NULL) snap_vnode = zm_fix_addr(snap_vnode);
     if (!KERN_POINTER_VALID(snap_vnode)) goto out;
     ret = snap_vnode;
@@ -1567,7 +1567,7 @@ out:
     return ret;
 }
 
-bool set_all_image_info_addr_and_size() {
+bool set_kernel_task_info() {
     auto ret = false;
     auto kr = KERN_FAILURE;
     auto task_dyld_info = (struct task_dyld_info *)NULL;
@@ -1582,7 +1582,7 @@ bool set_all_image_info_addr_and_size() {
     if (task_dyld_info_count == NULL) goto out;
     bzero(task_dyld_info_count, sizeof(mach_msg_type_number_t));
     *task_dyld_info_count = TASK_DYLD_INFO_COUNT;
-    auto const kernel_task_offset = GETOFFSET(kernel_task);
+    auto const kernel_task_offset = getoffset(kernel_task);
     if (!KERN_POINTER_VALID(kernel_task_offset)) goto out;
     auto const kernel_task_addr = ReadKernel64(kernel_task_offset);
     if (!KERN_POINTER_VALID(kernel_task_addr)) goto out;

@@ -36,8 +36,8 @@ TODO:
 - Update Unrestrict to implement the kernel calls
 #endif
 
-#define SETOFFSET(offset, val) set_offset(#offset, val)
-#define GETOFFSET(offset) get_offset(#offset)
+#define setoffset(offset, val) set_offset(#offset, val)
+#define getoffset(offset) get_offset(#offset)
 
 #define SIZEOF_STRUCT_EXTENSION 0x60
 
@@ -156,7 +156,7 @@ bool make_port_fake_task_port(mach_port_t port, kptr_t task_kaddr);
 bool set_hsp4(task_t port);
 kptr_t get_vnode_for_path(const char *path);
 kptr_t get_vnode_for_snapshot(int fd, char *name);
-bool set_all_image_info_addr_and_size(void);
+bool set_kernel_task_info(void);
 
 bool unrestrictProcess(pid_t pid);
 bool unrestrictProcessWithTaskPort(task_t task_port);
