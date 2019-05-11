@@ -609,7 +609,7 @@ void jailbreak()
             if (![rootfsSystemVersion[@"ProductBuildVersion"] isEqualToString:snapshotSystemVersion[@"ProductBuildVersion"]]) {
                 LOG("snapshot VersionPlist: %@", snapshotSystemVersion);
                 LOG("rootfs VersionPlist: %@", rootfsSystemVersion);
-                _assert("BuildVersions match"==NULL, localize(@"Unable to verify BuildVersions."), true);
+                _assert("BuildVersions match"==NULL, invalidRootMessage, true);
             }
             auto const test_snapshot = "test-snapshot";
             _assert(fs_snapshot_create(rootfd, test_snapshot, 0) == ERR_SUCCESS, localize(@"Unable to create test snapshot."), true);
