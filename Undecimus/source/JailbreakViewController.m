@@ -115,11 +115,6 @@ extern int maxStage;
 
 static NSString *bundledResources = nil;
 
-static void writeTestFile(const char *file) {
-    _assert(create_file(file, 0, 0644), localize(@"Unable to create test file."), true);
-    _assert(clean_file(file), localize(@"Unable to clean test file."), true);
-}
-
 uint64_t find_gadget_candidate(char **alternatives, size_t gadget_length) {
     auto const haystack_start = (void *)atoi; // will do...
     auto haystack_size = 100*1024*1024; // likewise...
@@ -172,6 +167,10 @@ void jailbreak()
 #define insertstatus(x) do { [status appendString:x]; } while (false)
 #define progress(x) do { LOG("Progress: %@", x); updateProgressHUD(hud, x); } while (false)
 #define sync_prefs() do { _assert(set_prefs(prefs), localize(@"Unable to synchronize app preferences. Please restart the app and try again."), true); } while (false)
+#define write_test_file(file) do { \
+    _assert(create_file(file, 0, 0644), localize(@"Unable to create test file."), true); \
+    _assert(clean_file(file), localize(@"Unable to clean test file."), true); \
+} while (false)
     
     upstage();
     
@@ -461,7 +460,7 @@ void jailbreak()
         
         progress(localize(@"Writing a test file to UserFS..."));
         auto const testFile = [NSString stringWithFormat:@"/var/mobile/test-%lu.txt", time(NULL)].UTF8String;
-        writeTestFile(testFile);
+        write_test_file(testFile);
         LOG("Successfully wrote a test file to UserFS.");
     }
     
@@ -754,7 +753,7 @@ void jailbreak()
         
         progress(localize(@"Writing a test file to RootFS..."));
         auto const testFile = [NSString stringWithFormat:@"/test-%lu.txt", time(NULL)].UTF8String;
-        writeTestFile(testFile);
+        write_test_file(testFile);
         LOG("Successfully wrote a test file to RootFS.");
     }
     
@@ -1625,6 +1624,7 @@ void jailbreak()
     
 out:;
 #undef sync_prefs
+#undef write_test_file
     progress(localize(@"Deinitializing jailbreak..."));
     LOG("Deinitializing kexecute...");
     term_kexecute();
