@@ -828,52 +828,52 @@ void jailbreak()
     {
         auto const offsetsFile = @"/jb/offsets.plist";
         auto dictionary = [NSMutableDictionary new];
-#define CACHEADDR(value, name) do { \
+#define cache_address(value, name) do { \
     dictionary[@(name)] = ADDRSTRING(value); \
 } while (false)
-#define CACHEOFFSET(offset, name) CACHEADDR(GETOFFSET(offset), name)
-        CACHEADDR(kernel_base, "KernelBase");
-        CACHEADDR(kernel_slide, "KernelSlide");
-        CACHEOFFSET(trustcache, "TrustChain");
-        CACHEADDR(ReadKernel64(GETOFFSET(OSBoolean_True)), "OSBooleanTrue");
-        CACHEADDR(ReadKernel64(GETOFFSET(OSBoolean_True)) + sizeof(kptr_t), "OSBooleanFalse");
-        CACHEOFFSET(osunserializexml, "OSUnserializeXML");
-        CACHEOFFSET(smalloc, "Smalloc");
-        CACHEOFFSET(add_x0_x0_0x40_ret, "AddRetGadget");
-        CACHEOFFSET(zone_map_ref, "ZoneMapOffset");
-        CACHEOFFSET(vfs_context_current, "VfsContextCurrent");
-        CACHEOFFSET(vnode_lookup, "VnodeLookup");
-        CACHEOFFSET(vnode_put, "VnodePut");
-        CACHEOFFSET(kernel_task, "KernelTask");
-        CACHEOFFSET(shenanigans, "Shenanigans");
-        CACHEOFFSET(lck_mtx_lock, "LckMtxLock");
-        CACHEOFFSET(lck_mtx_unlock, "LckMtxUnlock");
-        CACHEOFFSET(vnode_get_snapshot, "VnodeGetSnapshot");
-        CACHEOFFSET(fs_lookup_snapshot_metadata_by_name_and_return_name, "FsLookupSnapshotMetadataByNameAndReturnName");
-        CACHEOFFSET(pmap_load_trust_cache, "PmapLoadTrustCache");
-        CACHEOFFSET(apfs_jhash_getvnode, "APFSJhashGetVnode");
-        CACHEOFFSET(paciza_pointer__l2tp_domain_module_start, "PacizaPointerL2TPDomainModuleStart");
-        CACHEOFFSET(paciza_pointer__l2tp_domain_module_stop, "PacizaPointerL2TPDomainModuleStop");
-        CACHEOFFSET(l2tp_domain_inited, "L2TPDomainInited");
-        CACHEOFFSET(sysctl__net_ppp_l2tp, "SysctlNetPPPL2TP");
-        CACHEOFFSET(sysctl_unregister_oid, "SysctlUnregisterOid");
-        CACHEOFFSET(mov_x0_x4__br_x5, "MovX0X4BrX5");
-        CACHEOFFSET(mov_x9_x0__br_x1, "MovX9X0BrX1");
-        CACHEOFFSET(mov_x10_x3__br_x6, "MovX10X3BrX6");
-        CACHEOFFSET(kernel_forge_pacia_gadget, "KernelForgePaciaGadget");
-        CACHEOFFSET(kernel_forge_pacda_gadget, "KernelForgePacdaGadget");
-        CACHEOFFSET(IOUserClient__vtable, "IOUserClientVtable");
-        CACHEOFFSET(IORegistryEntry__getRegistryEntryID, "IORegistryEntryGetRegistryEntryID");
-        CACHEOFFSET(proc_find, "ProcFind");
-        CACHEOFFSET(proc_rele, "ProcRele");
-        CACHEOFFSET(extension_create_file, "ExtensionCreateFile");
-        CACHEOFFSET(extension_add, "ExtensionAdd");
-        CACHEOFFSET(extension_release, "ExtensionRelease");
-        CACHEOFFSET(sfree, "Sfree");
-        CACHEOFFSET(sstrdup, "Sstrdup");
-        CACHEOFFSET(strlen, "Strlen");
-#undef CACHEOFFSET
-#undef CACHEADDR
+#define cache_offset(offset, name) cache_address(GETOFFSET(offset), name)
+        cache_address(kernel_base, "KernelBase");
+        cache_address(kernel_slide, "KernelSlide");
+        cache_offset(trustcache, "TrustChain");
+        cache_address(ReadKernel64(GETOFFSET(OSBoolean_True)), "OSBooleanTrue");
+        cache_address(ReadKernel64(GETOFFSET(OSBoolean_True)) + sizeof(kptr_t), "OSBooleanFalse");
+        cache_offset(osunserializexml, "OSUnserializeXML");
+        cache_offset(smalloc, "Smalloc");
+        cache_offset(add_x0_x0_0x40_ret, "AddRetGadget");
+        cache_offset(zone_map_ref, "ZoneMapOffset");
+        cache_offset(vfs_context_current, "VfsContextCurrent");
+        cache_offset(vnode_lookup, "VnodeLookup");
+        cache_offset(vnode_put, "VnodePut");
+        cache_offset(kernel_task, "KernelTask");
+        cache_offset(shenanigans, "Shenanigans");
+        cache_offset(lck_mtx_lock, "LckMtxLock");
+        cache_offset(lck_mtx_unlock, "LckMtxUnlock");
+        cache_offset(vnode_get_snapshot, "VnodeGetSnapshot");
+        cache_offset(fs_lookup_snapshot_metadata_by_name_and_return_name, "FsLookupSnapshotMetadataByNameAndReturnName");
+        cache_offset(pmap_load_trust_cache, "PmapLoadTrustCache");
+        cache_offset(apfs_jhash_getvnode, "APFSJhashGetVnode");
+        cache_offset(paciza_pointer__l2tp_domain_module_start, "PacizaPointerL2TPDomainModuleStart");
+        cache_offset(paciza_pointer__l2tp_domain_module_stop, "PacizaPointerL2TPDomainModuleStop");
+        cache_offset(l2tp_domain_inited, "L2TPDomainInited");
+        cache_offset(sysctl__net_ppp_l2tp, "SysctlNetPPPL2TP");
+        cache_offset(sysctl_unregister_oid, "SysctlUnregisterOid");
+        cache_offset(mov_x0_x4__br_x5, "MovX0X4BrX5");
+        cache_offset(mov_x9_x0__br_x1, "MovX9X0BrX1");
+        cache_offset(mov_x10_x3__br_x6, "MovX10X3BrX6");
+        cache_offset(kernel_forge_pacia_gadget, "KernelForgePaciaGadget");
+        cache_offset(kernel_forge_pacda_gadget, "KernelForgePacdaGadget");
+        cache_offset(IOUserClient__vtable, "IOUserClientVtable");
+        cache_offset(IORegistryEntry__getRegistryEntryID, "IORegistryEntryGetRegistryEntryID");
+        cache_offset(proc_find, "ProcFind");
+        cache_offset(proc_rele, "ProcRele");
+        cache_offset(extension_create_file, "ExtensionCreateFile");
+        cache_offset(extension_add, "ExtensionAdd");
+        cache_offset(extension_release, "ExtensionRelease");
+        cache_offset(sfree, "Sfree");
+        cache_offset(sstrdup, "Sstrdup");
+        cache_offset(strlen, "Strlen");
+#undef cache_offset
+#undef cache_address
         if (![[NSMutableDictionary dictionaryWithContentsOfFile:offsetsFile] isEqual:dictionary]) {
             // Cache offsets.
             
