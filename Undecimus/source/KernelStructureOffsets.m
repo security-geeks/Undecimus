@@ -89,6 +89,7 @@ uint32_t kstruct_offsets_11_0[] = {
     0x8, // KSTRUCT_OFFSET_LABEL_L_PERPOLICY
     
     0x18, // KSTRUCT_SIZE_IPC_ENTRY
+    0x8, // KSTRUCT_OFFSET_IPC_ENTRY_IE_BITS
     
     0x6c, // KFREE_ADDR_OFFSET
 };
@@ -170,6 +171,7 @@ uint32_t kstruct_offsets_11_3[] = {
     0x8, // KSTRUCT_OFFSET_LABEL_L_PERPOLICY
     
     0x18, // KSTRUCT_SIZE_IPC_ENTRY
+    0x8, // KSTRUCT_OFFSET_IPC_ENTRY_IE_BITS
     
     0x6c, // KFREE_ADDR_OFFSET
 };
@@ -267,6 +269,7 @@ uint32_t kstruct_offsets_12_0[] = {
     0x8, // KSTRUCT_OFFSET_LABEL_L_PERPOLICY
     
     0x18, // KSTRUCT_SIZE_IPC_ENTRY
+    0x8, // KSTRUCT_OFFSET_IPC_ENTRY_IE_BITS
     
     0x6c, // KFREE_ADDR_OFFSET
 };

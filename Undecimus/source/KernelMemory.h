@@ -44,6 +44,19 @@ kern_return_t mach_vm_protect(
     boolean_t set_maximum,
     vm_prot_t new_protection);
 
+kern_return_t mach_vm_remap(
+    mach_port_name_t target,
+    mach_vm_address_t *address,
+    mach_vm_size_t size,
+    mach_vm_offset_t mask,
+    int flags,
+    mach_port_name_t src_task,
+    mach_vm_address_t src_address,
+    boolean_t copy,
+    vm_prot_t *cur_protection,
+    vm_prot_t *max_protection,
+    vm_inherit_t inheritance);
+
 extern size_t kreads;
 extern size_t kwrites;
 extern mach_port_t tfp0;
@@ -58,8 +71,8 @@ uint64_t ReadKernel64(kptr_t kaddr);
 
 #define wk32(kaddr, val) WriteKernel32(kaddr, val)
 #define wk64(kaddr, val) WriteKernel64(kaddr, val)
-void WriteKernel32(kptr_t kaddr, uint32_t val);
-void WriteKernel64(kptr_t kaddr, uint64_t val);
+bool WriteKernel32(kptr_t kaddr, uint32_t val);
+bool WriteKernel64(kptr_t kaddr, uint64_t val);
 
 bool wkbuffer(kptr_t kaddr, void* buffer, size_t length);
 bool rkbuffer(kptr_t kaddr, void* buffer, size_t length);

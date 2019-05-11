@@ -107,24 +107,14 @@ bool rkbuffer(kptr_t kaddr, void* buffer, size_t length)
     return (kread(kaddr, buffer, length) == length);
 }
 
-void WriteKernel32(kptr_t kaddr, uint32_t val)
+bool WriteKernel32(kptr_t kaddr, uint32_t val)
 {
-    if (tfp0 == MACH_PORT_NULL) {
-        LOG("attempt to write to kernel memory before any kernel memory write primitives available");
-        return;
-    }
-    
-    wkbuffer(kaddr, &val, sizeof(val));
+    return wkbuffer(kaddr, &val, sizeof(val));
 }
 
-void WriteKernel64(kptr_t kaddr, uint64_t val)
+bool WriteKernel64(kptr_t kaddr, uint64_t val)
 {
-    if (tfp0 == MACH_PORT_NULL) {
-        LOG("attempt to write to kernel memory before any kernel memory write primitives available");
-        return;
-    }
-    
-    wkbuffer(kaddr, &val, sizeof(val));
+    return wkbuffer(kaddr, &val, sizeof(val));
 }
 
 uint32_t rk32_via_kmem_read_port(kptr_t kaddr)

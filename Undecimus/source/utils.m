@@ -1215,6 +1215,72 @@ out:
     return kernel_page_size;
 }
 
+int waitForFile(const char *filename) {
+    auto rv = access(filename, F_OK);
+    for (auto i = 0; !(i >= 100 || rv == ERR_SUCCESS); i++) {
+        usleep(100000);
+        rv = access(filename, F_OK);
+    }
+    return rv;
+}
+
+NSString *hexFromInt(NSInteger val) {
+    return [NSString stringWithFormat:@"0x%lX", (long)val];
+}
+
+void waitFor(int seconds) {
+    for (auto i = 1; i <= seconds; i++) {
+        LOG("Waiting (%d/%d)", i, seconds);
+        sleep(1);
+    }
+}
+
+void blockDomainWithName(const char *name) {
+    id hostsFile = nil;
+    id newLine = nil;
+    id newHostsFile = nil;
+    hostsFile = [NSString stringWithContentsOfFile:@"/etc/hosts" encoding:NSUTF8StringEncoding error:nil];
+    newHostsFile = hostsFile;
+    newLine = [NSString stringWithFormat:@"\n127.0.0.1 %s\n", name];
+    if (![hostsFile containsString:newLine]) {
+        newHostsFile = [newHostsFile stringByAppendingString:newLine];
+    }
+    newLine = [NSString stringWithFormat:@"\n::1 %s\n", name];
+    if (![hostsFile containsString:newLine]) {
+        newHostsFile = [newHostsFile stringByAppendingString:newLine];
+    }
+    if (![newHostsFile isEqual:hostsFile]) {
+        [newHostsFile writeToFile:@"/etc/hosts" atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    }
+}
+
+void unblockDomainWithName(const char *name) {
+    id hostsFile = nil;
+    id newLine = nil;
+    id newHostsFile = nil;
+    hostsFile = [NSString stringWithContentsOfFile:@"/etc/hosts" encoding:NSUTF8StringEncoding error:nil];
+    newHostsFile = hostsFile;
+    newLine = [NSString stringWithFormat:@"\n127.0.0.1 %s\n", name];
+    if ([hostsFile containsString:newLine]) {
+        newHostsFile = [hostsFile stringByReplacingOccurrencesOfString:newLine withString:@""];
+    }
+    newLine = [NSString stringWithFormat:@"\n0.0.0.0 %s\n", name];
+    if ([hostsFile containsString:newLine]) {
+        newHostsFile = [hostsFile stringByReplacingOccurrencesOfString:newLine withString:@""];
+    }
+    newLine = [NSString stringWithFormat:@"\n0.0.0.0    %s\n", name];
+    if ([hostsFile containsString:newLine]) {
+        newHostsFile = [hostsFile stringByReplacingOccurrencesOfString:newLine withString:@""];
+    }
+    newLine = [NSString stringWithFormat:@"\n::1 %s\n", name];
+    if ([hostsFile containsString:newLine]) {
+        newHostsFile = [hostsFile stringByReplacingOccurrencesOfString:newLine withString:@""];
+    }
+    if (![newHostsFile isEqual:hostsFile]) {
+        [newHostsFile writeToFile:@"/etc/hosts" atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    }
+}
+
 __attribute__((constructor))
 static void ctor() {
     toInjectToTrustCache = [NSMutableArray new];

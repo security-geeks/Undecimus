@@ -157,6 +157,11 @@ void printOSDetails(void);
 bool isBetaFirmware(void);
 double getUptime(void);
 vm_size_t get_kernel_page_size(void);
+int waitForFile(const char *filename);
+NSString *hexFromInt(NSInteger val);
+void waitFor(int seconds);
+void blockDomainWithName(const char *name);
+void unblockDomainWithName(const char *name);
 
 extern NSData *lastSystemOutput;
 

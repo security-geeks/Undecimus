@@ -96,6 +96,7 @@ enum kstruct_offset {
     
     /* struct ipc_entry */
     KSTRUCT_SIZE_IPC_ENTRY,
+    KSTRUCT_OFFSET_IPC_ENTRY_IE_BITS,
     
     KFREE_ADDR_OFFSET,
 };

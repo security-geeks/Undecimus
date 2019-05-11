@@ -84,8 +84,8 @@
 
 
 - (void)initPrefs {
-    repair_prefs();
     register_default_prefs();
+    repair_prefs();
 }
 
 - (void)initShortcuts {

@@ -61,12 +61,12 @@ mach_port_t fake_host_priv(void);
 int message_size_for_kalloc_size(int kalloc_size);
 
 kptr_t get_kernel_proc_struct_addr(void);
-void iterate_proc_list(void (^handler)(kptr_t, pid_t, int *));
+bool iterate_proc_list(void (^handler)(kptr_t, pid_t, int *));
 kptr_t get_proc_struct_for_pid(pid_t pid);
 kptr_t get_address_of_port(pid_t pid, mach_port_t port);
 kptr_t get_kernel_cred_addr(void);
 kptr_t give_creds_to_process_at_addr(kptr_t proc, kptr_t cred_addr);
-void set_platform_binary(kptr_t proc, bool set);
+bool set_platform_binary(kptr_t proc, bool set);
 
 kptr_t zm_fix_addr(kptr_t addr);
 
@@ -75,22 +75,22 @@ bool verify_tfp0(void);
 extern int (*pmap_load_trust_cache)(kptr_t kernel_trust, size_t length);
 int _pmap_load_trust_cache(kptr_t kernel_trust, size_t length);
 
-void set_host_type(host_t host, uint32_t type);
-void export_tfp0(host_t host);
-void unexport_tfp0(host_t host);
+bool set_host_type(host_t host, uint32_t type);
+bool export_tfp0(host_t host);
+bool unexport_tfp0(host_t host);
 
-void set_csflags(kptr_t proc, uint32_t flags, bool value);
-void set_cs_platform_binary(kptr_t proc, bool value);
+bool set_csflags(kptr_t proc, uint32_t flags, bool value);
+bool set_cs_platform_binary(kptr_t proc, bool value);
 
 bool execute_with_credentials(kptr_t proc, kptr_t credentials, void (^function)(void));
 
 uint32_t get_proc_memstat_state(kptr_t proc);
-void set_proc_memstat_state(kptr_t proc, uint32_t memstat_state);
-void set_proc_memstat_internal(kptr_t proc, bool set);
+bool set_proc_memstat_state(kptr_t proc, uint32_t memstat_state);
+bool set_proc_memstat_internal(kptr_t proc, bool set);
 bool get_proc_memstat_internal(kptr_t proc);
 size_t kstrlen(kptr_t ptr);
 kptr_t kstralloc(const char *str);
-void kstrfree(kptr_t ptr);
+bool kstrfree(kptr_t ptr);
 kptr_t sstrdup(const char *str);
 void sfree(kptr_t ptr);
 int extension_create_file(kptr_t saveto, kptr_t sb, const char *path, size_t path_len, uint32_t subtype);
@@ -140,19 +140,27 @@ kptr_t OSUnserializeXML(const char *buffer);
 kptr_t get_exception_osarray(const char **exceptions);
 char **copy_amfi_entitlements(kptr_t present);
 kptr_t getOSBool(bool value);
-bool entitleProcess(kptr_t amfi_entitlements, const char *key, kptr_t val);
+bool entitle_process(kptr_t amfi_entitlements, const char *key, kptr_t val);
+bool exceptionalize_process(kptr_t sandbox, kptr_t amfi_entitlements, const char **exceptions);
+kptr_t get_amfi_entitlements(kptr_t cr_label);
+kptr_t get_sandbox(kptr_t cr_label);
+bool entitle_process_with_pid(pid_t pid, const char *key, kptr_t val);
+bool remove_memory_limit(void);
+bool restore_kernel_task_port(task_t *out_kernel_task_port);
+bool restore_kernel_base(uint64_t *out_kernel_base, uint64_t *out_kernel_slide);
+bool restore_kernel_offset_cache(void);
+bool restore_file_offset_cache(const char *offset_cache_file_path, kptr_t *out_kernel_base, uint64_t *out_kernel_slide);
+bool convert_port_to_task_port(mach_port_t port, kptr_t space, kptr_t task_kaddr);
+kptr_t make_fake_task(kptr_t vm_map);
+bool make_port_fake_task_port(mach_port_t port, kptr_t task_kaddr);
+bool set_hsp4(task_t port);
+kptr_t get_vnode_for_path(const char *path);
+kptr_t get_vnode_for_snapshot(int fd, char *name);
+bool set_all_image_info_addr_and_size(void);
+
 bool unrestrictProcess(pid_t pid);
 bool unrestrictProcessWithTaskPort(task_t task_port);
 bool revalidateProcess(pid_t pid);
 bool revalidateProcessWithTaskPort(task_t task_port);
-kptr_t get_amfi_entitlements(kptr_t cr_label);
-kptr_t get_sandbox(kptr_t cr_label);
-bool entitleProcessWithPid(pid_t pid, const char *key, kptr_t val);
-bool removeMemoryLimit(void);
-
-bool restore_kernel_task_port(task_t *out_kernel_task_port);
-bool restore_kernel_base(task_t kernel_task_port, uint64_t *out_kernel_base, uint64_t *out_kernel_slide);
-bool restore_kernel_offset_cache(task_t kernel_task_port);
-bool restore_file_offset_cache(const char *offset_cache_file_path, kptr_t *out_kernel_base, uint64_t *out_kernel_slide);
 
 #endif /* kutils_h */
