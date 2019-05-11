@@ -822,9 +822,18 @@ void jailbreak()
             _assert(rootfd > 0, localize(@"Unable to open RootFS."), true);
             auto snapshots = snapshot_list(rootfd);
             _assert(snapshots != NULL, localize(@"Unable to get snapshots for RootFS."), true);
-            auto const snapshot = *snapshots;
+            auto snapshot = strdup(*snapshots);
             LOG("%s", snapshot);
             _assert(snapshot != NULL, localize(@"Unable to find original snapshot for RootFS."), true);
+            if (!(kCFCoreFoundationVersionNumber < kCFCoreFoundationVersionNumber_iOS_11_3)) {
+                auto systemSnapshot = copySystemSnapshot();
+                _assert(systemSnapshot != NULL, localize(@"Unable to copy system snapshot."), true);
+                _assert(fs_snapshot_rename(rootfd, snapshot, systemSnapshot, 0) == ERR_SUCCESS, localize(@"Unable to rename original snapshot."), true);
+                SafeFreeNULL(snapshot);
+                snapshot = strdup(systemSnapshot);
+                _assert(snapshot != NULL, localize(@"Unable to duplicate string."), true);
+                SafeFreeNULL(systemSnapshot);
+            }
             auto const systemSnapshotMountPoint = "/private/var/tmp/jb/mnt2";
             if (is_mountpoint(systemSnapshotMountPoint)) {
                 _assert(unmount(systemSnapshotMountPoint, MNT_FORCE) == ERR_SUCCESS, localize(@"Unable to unmount old snapshot mount point."), true);
@@ -840,16 +849,11 @@ void jailbreak()
             if (kCFCoreFoundationVersionNumber < kCFCoreFoundationVersionNumber_iOS_11_3) {
                 _assert(runCommand("/usr/bin/rsync", "-vaxcH", "--progress", "--delete-after", "--exclude=/Developer", "--exclude=/usr/bin/uicache", [@(systemSnapshotMountPoint) stringByAppendingPathComponent:@"."].UTF8String, "/", NULL) == 0, localize(@"Unable to sync /Applications."), true);
             } else {
-                _assert(runCommand("/usr/bin/rsync", "-vaxcH", "--progress", "--delete-after", [@(systemSnapshotMountPoint) stringByAppendingPathComponent:@"Applications/."].UTF8String, "/Applications", NULL) == 0, localize(@"Unable to sync /."), true);
+                _assert(runCommand("/usr/bin/rsync", "-vaxcH", "--progress", "--delete", [@(systemSnapshotMountPoint) stringByAppendingPathComponent:@"Applications/."].UTF8String, "/Applications", NULL) == 0, localize(@"Unable to sync /."), true);
             }
             _assert(unmount(systemSnapshotMountPoint, MNT_FORCE) == ERR_SUCCESS, localize(@"Unable to unmount original snapshot mount point."), true);
-            if (!(kCFCoreFoundationVersionNumber < kCFCoreFoundationVersionNumber_iOS_11_3)) {
-                auto systemSnapshot = copySystemSnapshot();
-                _assert(systemSnapshot != NULL, localize(@"Unable to copy system snapshot."), true);
-                _assert(fs_snapshot_rename(rootfd, snapshot, systemSnapshot, 0) == ERR_SUCCESS, localize(@"Unable to rename original snapshot."), true);
-                SafeFreeNULL(systemSnapshot);
-            }
             close(rootfd);
+            SafeFreeNULL(snapshot);
             SafeFreeNULL(snapshots);
             _assert(runCommand("/usr/bin/uicache", NULL) == ERR_SUCCESS, localize(@"Unable to refresh icon cache."), true);
             _assert(clean_file("/usr/bin/uicache"), localize(@"Unable to clean uicache binary."), true);
