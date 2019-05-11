@@ -33,6 +33,18 @@ while (false)
 
 #define notice(msg, wait, destructive) showAlert(@"Notice", msg, wait, destructive)
 
+#define status(msg, btnenbld, tbenbld) do { \
+    LOG("Status: %@", msg); \
+    dispatch_async(dispatch_get_main_queue(), ^{ \
+        [UIView performWithoutAnimation:^{ \
+            [[[JailbreakViewController sharedController] goButton] setEnabled:btnenbld]; \
+            [[[[JailbreakViewController sharedController] tabBarController] tabBar] setUserInteractionEnabled:tbenbld]; \
+            [[[JailbreakViewController sharedController] goButton] setTitle:msg forState: btnenbld ? UIControlStateNormal : UIControlStateDisabled]; \
+            [[[JailbreakViewController sharedController] goButton] layoutIfNeeded]; \
+        }]; \
+    }); \
+} while (false)
+
 @interface JailbreakViewController : UIViewController
 @property (weak, nonatomic) IBOutlet UIButton *goButton;
 @property (weak, nonatomic) IBOutlet UITextView *outputView;

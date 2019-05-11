@@ -9,6 +9,7 @@
 #include <Foundation/Foundation.h>
 #define RAWLOG(str, args...) do { NSLog(@str, ##args); } while(false)
 #define localize(x) NSLocalizedString(x, @"")
+#define ADDRSTRING(val) [NSString stringWithFormat:@ADDR, val]
 #else
 #include <CoreFoundation/CoreFoundation.h>
 extern void NSLog(CFStringRef, ...);
