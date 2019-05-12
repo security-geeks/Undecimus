@@ -578,33 +578,41 @@ out:;
 
 bool set_file_extension(kptr_t sandbox, const char *exc_key, const char *path) {
     auto ret = false;
+    auto ext_kptr = KPTR_NULL;
     auto ext = KPTR_NULL;
     if (!KERN_POINTER_VALID(sandbox) || exc_key == NULL || path == NULL) goto out;
-    ext = smalloc(SIZEOF_STRUCT_EXTENSION);
-    if (!KERN_POINTER_VALID(ext)) goto out;
-    auto const ret_extension_create_file = extension_create_file(ext, sandbox, path, strlen(path) + 1, 0);
+    ext_kptr = smalloc(sizeof(kptr_t));
+    if (!KERN_POINTER_VALID(ext_kptr)) goto out;
+    auto const ret_extension_create_file = extension_create_file(ext_kptr, sandbox, path, strlen(path), 0);
     if (ret_extension_create_file != 0) goto out;
+    ext = ReadKernel64(ext_kptr);
+    if (!KERN_POINTER_VALID(ext)) goto out;
     auto const ret_extension_add = extension_add(ext, sandbox, exc_key);
     if (ret_extension_add != 0) goto out;
     ret = true;
 out:;
-    if (KERN_POINTER_VALID(ext)) extension_release(ext);
+    if (KERN_POINTER_VALID(ext)) extension_release(ext_kptr); ext = KPTR_NULL;
+    if (KERN_POINTER_VALID(ext_kptr)) sfree(ext_kptr); ext_kptr = KPTR_NULL;
     return ret;
 }
 
 bool set_mach_extension(kptr_t sandbox, const char *exc_key, const char *name) {
     auto ret = false;
+    auto ext_kptr = KPTR_NULL;
     auto ext = KPTR_NULL;
     if (!KERN_POINTER_VALID(sandbox) || exc_key == NULL || name == NULL) goto out;
-    ext = smalloc(SIZEOF_STRUCT_EXTENSION);
-    if (!KERN_POINTER_VALID(ext)) goto out;
-    auto const ret_extension_create_mach = extension_create_mach(ext, sandbox, name, 0);
+    ext_kptr = smalloc(sizeof(kptr_t));
+    if (!KERN_POINTER_VALID(ext_kptr)) goto out;
+    auto const ret_extension_create_mach = extension_create_mach(ext_kptr, sandbox, name, 0);
     if (ret_extension_create_mach != 0) goto out;
+    ext = ReadKernel64(ext_kptr);
+    if (!KERN_POINTER_VALID(ext)) goto out;
     auto const ret_extension_add = extension_add(ext, sandbox, exc_key);
     if (ret_extension_add != 0) goto out;
     ret = true;
 out:;
-    if (KERN_POINTER_VALID(ext)) extension_release(ext);
+    if (KERN_POINTER_VALID(ext)) extension_release(ext_kptr); ext = KPTR_NULL;
+    if (KERN_POINTER_VALID(ext_kptr)) sfree(ext_kptr); ext_kptr = KPTR_NULL;
     return ret;
 }
 

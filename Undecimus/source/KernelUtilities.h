@@ -39,8 +39,6 @@ TODO:
 #define setoffset(offset, val) set_offset(#offset, val)
 #define getoffset(offset) get_offset(#offset)
 
-#define SIZEOF_STRUCT_EXTENSION 0x60
-
 #define OSBoolTrue getOSBool(true)
 #define OSBoolFalse getOSBool(false)
 
