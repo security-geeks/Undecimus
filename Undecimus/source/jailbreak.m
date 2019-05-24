@@ -1567,23 +1567,25 @@ void jailbreak()
             // Load Tweaks.
             
             progress(localize(@"Loading Tweaks..."));
+            const char *waitCommand = NULL;
+            if (prefs->auto_respring) {
+                waitCommand = "";
+            } else {
+                waitCommand = [NSString stringWithFormat:@"while ps -p %d; do :; done;", myPid].UTF8String;
+            }
             if (prefs->reload_system_daemons && !needStrap) {
                 rv = systemf("nohup bash -c \""
-                             "while ps -p %d;"
-                             "do :;"
-                             "done;"
+                             "%s"
                              "launchctl unload /System/Library/LaunchDaemons/com.apple.backboardd.plist && "
                              "ldrestart ;"
                              "launchctl load /System/Library/LaunchDaemons/com.apple.backboardd.plist"
-                             "\" >/dev/null 2>&1 &", myPid);
+                             "\" >/dev/null 2>&1 &", waitCommand);
             } else {
                 rv = systemf("nohup bash -c \""
-                             "while ps -p %d;"
-                             "do :;"
-                             "done;"
+                             "%s"
                              "launchctl stop com.apple.mDNSResponder ;"
                              "sbreload"
-                             "\" >/dev/null 2>&1 &", myPid);
+                             "\" >/dev/null 2>&1 &", waitCommand);
             }
             _assert(WEXITSTATUS(rv) == ERR_SUCCESS, localize(@"Unable to load tweaks."), true);
             LOG("Successfully loaded Tweaks.");
