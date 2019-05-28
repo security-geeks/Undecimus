@@ -225,7 +225,7 @@ static CGFloat largestLengthScreen = 0;
 
 -(void)hapticTouchFeedback {
     if ([[[UIDevice currentDevice] valueForKey:@"_feedbackSupportLevel"] intValue] == 2) {
-        UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle: UIImpactFeedbackStyleLight];
+        UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
         [generator prepare];
         [generator impactOccurred];
     } else {
