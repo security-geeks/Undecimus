@@ -89,6 +89,7 @@
     if (prefs->dark_mode) {
         [self darkModeSettings];
     }
+    release_prefs(&prefs);
     
     [self.BootNonceTextField setDelegate:self];
     self.tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(userTappedAnyware:)];

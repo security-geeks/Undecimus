@@ -21,6 +21,7 @@
     if (prefs->dark_mode) {
         [self darkModeCreditsView];
     }
+    release_prefs(&prefs);
 }
 
 - (void)didReceiveMemoryWarning {

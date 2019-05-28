@@ -73,9 +73,9 @@ static CGFloat largestLengthScreen = 0;
     self.swipeUpLabel.textColor = UIColor.whiteColor;
     
     [self.settingsNavBar setTintColor:[UIColor whiteColor]];
-    [self.settingsNavBar setLargeTitleTextAttributes:@{NSForegroundColorAttributeName : [UIColor whiteColor]}];
+    [self.settingsNavBar setLargeTitleTextAttributes:@{NSForegroundColorAttributeName:[UIColor whiteColor]}];
     [self.creditsNavBar setTintColor:[UIColor whiteColor]];
-    [self.creditsNavBar setLargeTitleTextAttributes:@{NSForegroundColorAttributeName : [UIColor whiteColor]}];
+    [self.creditsNavBar setLargeTitleTextAttributes:@{NSForegroundColorAttributeName:[UIColor whiteColor]}];
     
     self.uncoverDescriptionLabel.textColor = UIColor.whiteColor;
     self.byLabel.textColor = UIColor.whiteColor;
@@ -214,13 +214,10 @@ static CGFloat largestLengthScreen = 0;
 
 - (UIStatusBarStyle)preferredStatusBarStyle {
     prefs_t *prefs = copy_prefs();
-    
-    if (prefs->dark_mode) {
-        return UIStatusBarStyleLightContent;
-    } else {
-        return UIStatusBarStyleDefault;
-    }
-}
+    UIStatusBarStyle style = prefs->dark_mode ? UIStatusBarStyleLightContent : UIStatusBarStyleLightContent;
+    release_prefs(&prefs);
+    return style;
+};
 
 -(void)hapticTouchFeedback {
     if ([[[UIDevice currentDevice] valueForKey:@"_feedbackSupportLevel"] intValue] == 2) {
