@@ -30,6 +30,7 @@ static NSTimer *swipeUpTimer = nil;
 static BOOL showSwipeUpGesture = NO;
 static CGFloat initialYLocation = 0;
 static CGFloat moveOnValidNumber = 0;
+static CGFloat largestLengthScreen = 0;
 
 - (IBAction)tappedOnJailbreak:(id)sender
 {
@@ -63,15 +64,43 @@ static CGFloat moveOnValidNumber = 0;
     release_prefs(&prefs);
 }
 
+-(void)darkMode {
+    self.mainView.backgroundColor = [UIColor.blackColor colorWithAlphaComponent:0.9];
+    self.settingsTransitionView.backgroundColor = [UIColor.blackColor colorWithAlphaComponent:0.9];
+    self.creditsTransitionView.backgroundColor = [UIColor.blackColor colorWithAlphaComponent:0.9];
+    self.jailbreakView.backgroundColor = [UIColor.blackColor colorWithAlphaComponent:0.9];
+    self.uOLabel.textColor = UIColor.whiteColor;
+    self.swipeUpLabel.textColor = UIColor.whiteColor;
+    
+    [self.settingsNavBar setTintColor:[UIColor whiteColor]];
+    [self.settingsNavBar setLargeTitleTextAttributes:@{NSForegroundColorAttributeName:[UIColor whiteColor]}];
+    [self.creditsNavBar setTintColor:[UIColor whiteColor]];
+    [self.creditsNavBar setLargeTitleTextAttributes:@{NSForegroundColorAttributeName:[UIColor whiteColor]}];
+    
+    self.uncoverDescriptionLabel.textColor = UIColor.whiteColor;
+    self.byLabel.textColor = UIColor.whiteColor;
+    self.firstAndLabel.textColor = UIColor.whiteColor;
+    self.uiByLabel.textColor = UIColor.whiteColor;
+    self.secondAndLabel.textColor = UIColor.whiteColor;
+    self.thirdAndLabel.textColor = UIColor.whiteColor;
+    self.jailbreakViewUOLabel.textColor = UIColor.whiteColor;
+    self.jailbreakActivityIndicator.activityIndicatorViewStyle = UIActivityIndicatorViewStyleWhite;
+    self.jailbreakProgressView.progressTintColor = UIColor.whiteColor;
+}
+
+
+
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     
     [self updateStatus];
     
-    if (UIScreen.mainScreen.bounds.size.width > UIScreen.mainScreen.bounds.size.height) {
-        movementConstant = UIScreen.mainScreen.bounds.size.width;
-    } else {
+    if ((UIScreen.mainScreen.bounds.size.width < UIScreen.mainScreen.bounds.size.height) && (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad)) {
         movementConstant = UIScreen.mainScreen.bounds.size.height;
+        largestLengthScreen = UIScreen.mainScreen.bounds.size.height;
+    } else {
+        movementConstant = UIScreen.mainScreen.bounds.size.width;
+        largestLengthScreen = UIScreen.mainScreen.bounds.size.width;
     }
     
     self.settingsTransitionView.transform = CGAffineTransformTranslate(CGAffineTransformIdentity, movementConstant, 0);
@@ -147,7 +176,6 @@ static CGFloat moveOnValidNumber = 0;
     
     [self.creditsNavBar setBackgroundImage:[UIImage new] forBarMetrics:UIBarMetricsDefault];
     [self.creditsNavBar setShadowImage:[UIImage new]];
-    
     self.swipeUpLabel.alpha = 0;
     
     prefs_t *prefs = copy_prefs();
@@ -159,6 +187,10 @@ static CGFloat moveOnValidNumber = 0;
         showSwipeUpGesture = YES;
         swipeUpTimer = [NSTimer scheduledTimerWithTimeInterval:1.6 target:self selector:@selector(swipeUpAnimation:) userInfo:nil repeats:YES];
         self.undecimusLogoCentreConstraint.constant = -70;
+    }
+    
+    if (prefs->dark_mode) {
+        [self darkMode];
     }
     
     release_prefs(&prefs);
@@ -181,8 +213,11 @@ static CGFloat moveOnValidNumber = 0;
 }
 
 - (UIStatusBarStyle)preferredStatusBarStyle {
-    return UIStatusBarStyleDefault;
-}
+    prefs_t *prefs = copy_prefs();
+    UIStatusBarStyle style = prefs->dark_mode ? UIStatusBarStyleLightContent : UIStatusBarStyleLightContent;
+    release_prefs(&prefs);
+    return style;
+};
 
 -(void)hapticTouchFeedback {
     if ([[[UIDevice currentDevice] valueForKey:@"_feedbackSupportLevel"] intValue] == 2) {
@@ -198,12 +233,15 @@ static CGFloat moveOnValidNumber = 0;
     UITouch *touch = [touches anyObject];
     CGPoint secondaryLocation = [touch locationInView:self.mainView];
     CGFloat yLocation = secondaryLocation.y;
+    
     if (touch.view == self.mainView && showSwipeUpGesture && jailbreakSupported()) {
         initialYLocation = yLocation;
     } else if (touch.view == self.creditsButtonView) {
         [self touchBeganHapticTouchButtons:self.creditsButtonView];
+        self.creditsTransitionView.transform = CGAffineTransformTranslate(CGAffineTransformIdentity, -movementConstant, 0);
     } else if (touch.view == self.settingsButtonView) {
         [self touchBeganHapticTouchButtons:self.settingsButtonView];
+        self.settingsTransitionView.transform = CGAffineTransformTranslate(CGAffineTransformIdentity, movementConstant, 0);
     }
 }
 
@@ -212,6 +250,7 @@ static CGFloat moveOnValidNumber = 0;
         buttonView.transform = CGAffineTransformScale(CGAffineTransformIdentity, 1.5, 1.5);
     } completion:nil];
     [self hapticTouchFeedback];
+    movementConstant = UIScreen.mainScreen.bounds.size.width;
 }
 
 -(void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
@@ -247,17 +286,35 @@ static CGFloat moveOnValidNumber = 0;
         }
     } else if (touch.view == self.settingsButtonView) {
         [self openOtherMenus:self.settingsTransitionView: self.settingsButtonView: -movementConstant];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^(void){
+            self.mainView.transform = CGAffineTransformTranslate(CGAffineTransformIdentity, -largestLengthScreen, 0);
+        });
     } else if (touch.view == self.creditsButtonView) {
         [self openOtherMenus:self.creditsTransitionView: self.creditsButtonView: movementConstant];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^(void){
+            self.mainView.transform = CGAffineTransformTranslate(CGAffineTransformIdentity, largestLengthScreen, 0);
+        });
     }
 }
 
 - (IBAction)doneSettings:(id)sender {
+    movementConstant = UIScreen.mainScreen.bounds.size.width;
+    self.mainView.transform = CGAffineTransformTranslate(CGAffineTransformIdentity, -movementConstant, 0);
     [self closeOtherMenus:self.settingsTransitionView : movementConstant];
+    
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^(void){
+        self.settingsTransitionView.transform = CGAffineTransformTranslate(CGAffineTransformIdentity, largestLengthScreen, 0);
+    });
 }
 
 - (IBAction)doneCredits:(id)sender {
+    movementConstant = UIScreen.mainScreen.bounds.size.width;
+    self.mainView.transform = CGAffineTransformTranslate(CGAffineTransformIdentity, movementConstant, 0);
     [self closeOtherMenus:self.creditsTransitionView : -movementConstant];
+    
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^(void){
+        self.creditsTransitionView.transform = CGAffineTransformTranslate(CGAffineTransformIdentity, -largestLengthScreen, 0);
+    });
 }
 
 -(void)openOtherMenus:(UIView *)viewToOpen :(UIView *) buttonToOpen : (CGFloat) movementConstant  {
