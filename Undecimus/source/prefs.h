@@ -69,6 +69,8 @@ prefs_t *copy_prefs(void);
 void release_prefs(prefs_t **prefs);
 bool load_prefs(prefs_t *prefs);
 bool set_prefs(prefs_t *prefs);
+bool is_equal_prefs(prefs_t *prefs1, prefs_t *prefs2);
+bool synchronize_prefs(prefs_t *prefs);
 void register_default_prefs(void);
 void repair_prefs(void);
 void reset_prefs(void);

@@ -97,7 +97,54 @@ bool set_prefs(prefs_t *prefs) {
     [userDefaults setObject:[NSNumber numberWithBool:(BOOL)prefs->dark_mode] forKey:@K_DARK_MODE inDomain:prefsFile];
     [userDefaults setObject:[NSNumber numberWithBool:(BOOL)prefs->auto_respring] forKey:@K_AUTO_RESPRING inDomain:prefsFile];
     [userDefaults setObject:[NSNumber numberWithBool:(BOOL)prefs->hide_progress_hud] forKey:@K_HIDE_PROGRESS_HUD inDomain:prefsFile];
-    [userDefaults synchronize];
+    synchronize_prefs(prefs);
+    return true;
+}
+
+bool is_equal_prefs(prefs_t *prefs1, prefs_t *prefs2) {
+    if (prefs1 == NULL || prefs2 == NULL) return false;
+#define compare_integer(x) do { if (prefs1->x != prefs2->x) return false; } while(false)
+#define compare_bool(x) do { if (prefs1->x != prefs2->x) return false; } while(false)
+#define compare_string(x) do { if (!(prefs1->x == prefs2->x || (prefs1->x != NULL && prefs2->x != NULL && strcmp(prefs1->x, prefs2->x) == 0))) return false; } while(false)
+    compare_bool(load_tweaks);
+    compare_bool(load_daemons);
+    compare_bool(dump_apticket);
+    compare_bool(run_uicache);
+    compare_string(boot_nonce);
+    compare_bool(disable_auto_updates);
+    compare_bool(disable_app_revokes);
+    compare_bool(overwrite_boot_nonce);
+    compare_bool(export_kernel_task_port);
+    compare_bool(restore_rootfs);
+    compare_bool(increase_memory_limit);
+    compare_string(ecid);
+    compare_bool(install_cydia);
+    compare_bool(install_openssh);
+    compare_bool(reload_system_daemons);
+    compare_bool(reset_cydia_cache);
+    compare_bool(ssh_only);
+    compare_bool(enable_get_task_allow);
+    compare_bool(set_cs_debugged);
+    compare_bool(hide_log_window);
+    compare_bool(dark_mode);
+    compare_bool(auto_respring);
+    compare_bool(hide_progress_hud);
+    compare_integer(exploit);
+#undef compare_integer
+#undef compare_bool
+#undef compare_string
+    return true;
+}
+
+bool synchronize_prefs(prefs_t *prefs) {
+    if (prefs == NULL) return false;
+    prefs_t *current_prefs = NULL;
+    bool synchronized_prefs = false;
+    while (!synchronized_prefs) {
+        current_prefs = copy_prefs();
+        synchronized_prefs = is_equal_prefs(prefs, current_prefs);
+        release_prefs(&current_prefs);
+    }
     return true;
 }
 
