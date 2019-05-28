@@ -214,7 +214,7 @@ static CGFloat largestLengthScreen = 0;
 
 - (UIStatusBarStyle)preferredStatusBarStyle {
     prefs_t *prefs = copy_prefs();
-    UIStatusBarStyle style = prefs->dark_mode ? UIStatusBarStyleLightContent : UIStatusBarStyleLightContent;
+    UIStatusBarStyle style = prefs->dark_mode ? UIStatusBarStyleLightContent : UIStatusBarStyleDefault;
     release_prefs(&prefs);
     return style;
 };
