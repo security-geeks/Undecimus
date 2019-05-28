@@ -213,9 +213,13 @@ static CGFloat largestLengthScreen = 0;
 }
 
 - (UIStatusBarStyle)preferredStatusBarStyle {
-    prefs_t *prefs = copy_prefs();
-    UIStatusBarStyle style = prefs->dark_mode ? UIStatusBarStyleLightContent : UIStatusBarStyleDefault;
-    release_prefs(&prefs);
+    static UIStatusBarStyle style;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        prefs_t *prefs = copy_prefs();
+        style = prefs->dark_mode ? UIStatusBarStyleLightContent : UIStatusBarStyleDefault;
+        release_prefs(&prefs);
+    });
     return style;
 };
 

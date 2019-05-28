@@ -96,6 +96,7 @@ NSString *hexFromInt(NSInteger val);
 +(JailbreakViewController*)sharedController;
 - (void)appendTextToOutput:(NSString*)text;
 - (void)updateStatus;
+-(void)darkMode;
 
 @end
 
